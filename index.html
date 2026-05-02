@@ -4,84 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Sistema Fundição Veri/Pink Heart</title>
-<script>
-// ── Proxy via Edge Function (sem problema de CORS/Headers) ──
-const PROXY_URL = 'https://sykyvlpcrpfbzngbkkng.supabase.co/functions/v1/api-proxy';
-
-function _call(table, method, query, filters, payload) {
-  return fetch(PROXY_URL, {
-    method: 'POST',
-    headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({ table, method, query, filters, payload })
-  })
-  .then(function(r) { return r.json(); })
-  .then(function(r) {
-    if (r.error) return { data: null, error: r.error };
-    return { data: r.data ?? [], error: null };
-  })
-  .catch(function(e) { return { data: null, error: { message: e.message } }; });
-}
-
-function _builder(table) {
-  var _method = 'select';
-  var _query = '*';
-  var _filters = [];
-  var _payload = null;
-
-  var obj = {
-    select: function(q) { _query = q || '*'; return obj; },
-    eq: function(col, val) { _filters.push({type:'eq', col, val}); return obj; },
-    neq: function(col, val) { _filters.push({type:'neq', col, val}); return obj; },
-    is: function(col, val) { _filters.push({type:'is', col, val}); return obj; },
-    in: function(col, val) { _filters.push({type:'in', col, val}); return obj; },
-    gte: function(col, val) { _filters.push({type:'gte', col, val}); return obj; },
-    lte: function(col, val) { _filters.push({type:'lte', col, val}); return obj; },
-    gt: function(col, val) { _filters.push({type:'gte', col, val}); return obj; },
-    lt: function(col, val) { _filters.push({type:'lte', col, val}); return obj; },
-    order: function(col, opts) { _filters.push({type:'order', col, asc: opts?.ascending !== false}); return obj; },
-    limit: function(n) { _filters.push({type:'limit', val: n}); return obj; },
-    single: function() { _filters.push({type:'single'}); return obj; },
-    insert: function(data) { _method='insert'; _payload=data; return obj; },
-    update: function(data) { _method='update'; _payload=data; return obj; },
-    delete: function() { _method='delete'; return obj; },
-    upsert: function(data, opts) {
-      _method='upsert';
-      _payload=data;
-      if(opts?.onConflict) _filters.push({type:'eq', onConflict: opts.onConflict});
-      return obj;
-    },
-    then: function(resolve, reject) {
-      var p = _call(table, _method, _query, _filters, _payload)
-        .then(function(res) {
-          // single: retornar primeiro item
-          if(_filters.find(function(f){return f.type==='single';})) {
-            res = {data: res.data && res.data[0] ? res.data[0] : res.data, error: res.error};
-          }
-          return res;
-        });
-      if(resolve) return p.then(resolve, reject);
-      return p;
-    }
-  };
-  return obj;
-}
-
-var db = {
-  from: function(table) {
-    var b = _builder(table);
-    return {
-      select: function(q) { return b.select(q); },
-      insert: function(d) { return b.insert(d); },
-      update: function(d) { return b.update(d); },
-      delete: function() { return b.delete(); },
-      upsert: function(d, o) { return b.upsert(d, o); }
-    };
-  },
-  channel: function() { return { on: function() { return this; }, subscribe: function() {} }; },
-  removeChannel: function() {}
-};
-var supabase = { createClient: function() { return db; } };
-</script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 <style>
 :root{--g:#0F7A5B;--gd:#0A4F3D;--gl:#E6F4EF;--gp:#f0faf6;--r:#DC2626;--rl:#FEE2E2;--a:#D97706;--al:#FEF3C7;--b:#2563EB;--bl:#EFF6FF;--c1:#F9FAFB;--c2:#F3F4F6;--c3:#E5E7EB;--c4:#9CA3AF;--c5:#6B7280;--c6:#4B5563;--c7:#374151;--c8:#1F2937;--c9:#111827;--fn:system-ui,sans-serif;--fm:monospace;--rr:10px;--rs:6px;--sh:0 1px 3px rgba(0,0,0,.08);}
@@ -1255,7 +1178,7 @@ tbody td{padding:8px 12px;font-size:13px;color:var(--c7);}
 <script>
 const SURL='https://sykyvlpcrpfbzngbkkng.supabase.co';
 const SKEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InN5a3l2bHBjcnBmYnpuZ2Jra25nIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzM5NjEzNTksImV4cCI6MjA4OTUzNzM1OX0.uDPSrhRyza0u7UO3JsDuA5D8Z-DuQyN5ywfRto1Od4I';
-// db definido pelo shim acima
+const db=supabase.createClient(SURL,SKEY);
 
 var U=null,pgCur='pedidos',filtPed='todos',filtAF='todos',filtSV='todos';
 var editAtivId=null,chartSt=null,photos={},selSkus=new Map();
