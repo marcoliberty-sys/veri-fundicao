@@ -4,7 +4,147 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Sistema Fundição Veri/Pink Heart</title>
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script>
+// ── Supabase Fetch Shim (sem biblioteca, sem postMessage) ──
+const SURL='https://sykyvlpcrpfbzngbkkng.supabase.co';
+const SKEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InN5a3l2bHBjcnBmYnpuZ2Jra25nIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzM5NjEzNTksImV4cCI6MjA4OTUzNzM1OX0.uDPSrhRyza0u7UO3JsDuA5D8Z-DuQyN5ywfRto1Od4I';
+
+function _supa_fetch(method, path, body) {
+  return fetch(SURL + path, {
+    method: method,
+    headers: {
+      'Content-Type': 'application/json',
+      'apikey': SKEY,
+      'Authorization': 'Bearer ' + SKEY,
+      'Prefer': method === 'POST' ? 'return=representation' : 'return=representation'
+    },
+    body: body ? JSON.stringify(body) : undefined
+  }).then(function(r) {
+    return r.json().then(function(data) {
+      if (!r.ok) return { data: null, error: data };
+      return { data: Array.isArray(data) ? data : [data], error: null };
+    });
+  }).catch(function(e) {
+    return { data: null, error: { message: e.message } };
+  });
+}
+
+// Builder pattern que imita db.from().select().eq().then()
+function _builder(table, method, payload) {
+  var _table = table;
+  var _filters = [];
+  var _select = '*';
+  var _order = null;
+  var _limit = null;
+  var _single = false;
+  var _method = method || 'GET';
+  var _payload = payload || null;
+  var _upsert = false;
+  var _onConflict = null;
+
+  function buildUrl() {
+    var url = '/rest/v1/' + _table + '?select=' + encodeURIComponent(_select);
+    _filters.forEach(function(f) { url += '&' + f; });
+    if (_order) url += '&order=' + _order;
+    if (_limit) url += '&limit=' + _limit;
+    return url;
+  }
+
+  var obj = {
+    select: function(cols) { _select = cols || '*'; return obj; },
+    eq: function(col, val) { _filters.push(col + '=eq.' + val); return obj; },
+    neq: function(col, val) { _filters.push(col + '=neq.' + val); return obj; },
+    gt: function(col, val) { _filters.push(col + '=gt.' + val); return obj; },
+    gte: function(col, val) { _filters.push(col + '=gte.' + val); return obj; },
+    lt: function(col, val) { _filters.push(col + '=lt.' + val); return obj; },
+    lte: function(col, val) { _filters.push(col + '=lte.' + val); return obj; },
+    is: function(col, val) { _filters.push(col + '=is.' + (val===null?'null':val)); return obj; },
+    ilike: function(col, val) { _filters.push(col + '=ilike.' + val); return obj; },
+    in: function(col, vals) { _filters.push(col + '=in.(' + vals.join(',') + ')'); return obj; },
+    order: function(col, opts) {
+      var asc = opts && opts.ascending === false ? 'desc' : 'asc';
+      _order = col + '.' + asc;
+      return obj;
+    },
+    limit: function(n) { _limit = n; return obj; },
+    single: function() { _single = true; return obj; },
+    upsert: function(data, opts) {
+      _method = 'POST';
+      _payload = data;
+      _upsert = true;
+      if (opts && opts.onConflict) _onConflict = opts.onConflict;
+      return obj;
+    },
+    then: function(resolve, reject) {
+      var url = buildUrl();
+      var method = _method;
+      var headers = {
+        'Content-Type': 'application/json',
+        'apikey': SKEY,
+        'Authorization': 'Bearer ' + SKEY
+      };
+      if (method === 'GET') {
+        headers['Prefer'] = 'count=exact';
+      } else if (method === 'POST') {
+        headers['Prefer'] = _upsert
+          ? 'resolution=merge-duplicates,return=representation'
+          : 'return=representation';
+        if (_onConflict) headers['Prefer'] += ',on_conflict=' + _onConflict;
+        // POST para upsert vai para a URL base sem filtros
+        if (_upsert) url = '/rest/v1/' + _table;
+      } else if (method === 'PATCH') {
+        headers['Prefer'] = 'return=representation';
+        url = buildUrl();
+      } else if (method === 'DELETE') {
+        url = buildUrl();
+      }
+
+      var fetchOpts = { method: method, headers: headers };
+      if (_payload !== null) {
+        fetchOpts.body = JSON.stringify(Array.isArray(_payload) ? _payload : [_payload]);
+      }
+
+      return fetch(SURL + url, fetchOpts)
+        .then(function(r) {
+          if (r.status === 204) return resolve ? resolve({ data: [], error: null }) : { data: [], error: null };
+          return r.json().then(function(data) {
+            var result;
+            if (!r.ok) {
+              result = { data: null, error: data };
+            } else {
+              var arr = Array.isArray(data) ? data : (data ? [data] : []);
+              result = { data: _single ? (arr[0] || null) : arr, error: null };
+            }
+            return resolve ? resolve(result) : result;
+          });
+        })
+        .catch(function(e) {
+          var result = { data: null, error: { message: e.message } };
+          return resolve ? resolve(result) : result;
+        });
+    }
+  };
+  return obj;
+}
+
+// Objeto db compatível com API Supabase
+var db = {
+  from: function(table) {
+    return {
+      select: function(cols) { return _builder(table, 'GET').select(cols); },
+      insert: function(data) { return _builder(table, 'POST', data); },
+      update: function(data) { return _builder(table, 'PATCH', data); },
+      delete: function() { return _builder(table, 'DELETE'); },
+      upsert: function(data, opts) { return _builder(table, 'POST', data).upsert(data, opts); }
+    };
+  },
+  channel: function() { return { on: function() { return this; }, subscribe: function() {} }; },
+  removeChannel: function() {}
+};
+
+// Compatibilidade com supabase.createClient (não usado mais)
+var supabase = { createClient: function() { return db; } };
+</script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 <style>
 :root{--g:#0F7A5B;--gd:#0A4F3D;--gl:#E6F4EF;--gp:#f0faf6;--r:#DC2626;--rl:#FEE2E2;--a:#D97706;--al:#FEF3C7;--b:#2563EB;--bl:#EFF6FF;--c1:#F9FAFB;--c2:#F3F4F6;--c3:#E5E7EB;--c4:#9CA3AF;--c5:#6B7280;--c6:#4B5563;--c7:#374151;--c8:#1F2937;--c9:#111827;--fn:system-ui,sans-serif;--fm:monospace;--rr:10px;--rs:6px;--sh:0 1px 3px rgba(0,0,0,.08);}
@@ -130,7 +270,7 @@ tbody td{padding:8px 12px;font-size:13px;color:var(--c7);}
 .sku-builder{border:1px solid var(--c3);border-radius:var(--rs);overflow:hidden;margin-top:4px;}
 .sku-bh{padding:6px 9px;background:var(--c1);border-bottom:1px solid var(--c2);display:flex;align-items:center;justify-content:space-between;}
 .sku-bht{font-size:10px;font-weight:600;color:var(--c6);text-transform:uppercase;letter-spacing:.4px;}
-.sku-row{display:grid;grid-template-columns:1fr 80px 93px 26px;gap:5px;padding:5px 8px;border-bottom:1px solid var(--c2);align-items:center;}
+.sku-row{display:grid;grid-template-columns:1fr 80px 26px;gap:5px;padding:5px 8px;border-bottom:1px solid var(--c2);align-items:center;}
 .sku-row input{padding:4px 6px;border-radius:3px;border:1px solid var(--c3);font-size:11.5px;font-family:var(--fn);outline:none;}
 .sku-row input:focus{border-color:var(--g);}
 .dsk{background:none;border:none;cursor:pointer;color:var(--c4);font-size:14px;}.dsk:hover{color:var(--r);}
@@ -171,7 +311,6 @@ tbody td{padding:8px 12px;font-size:13px;color:var(--c7);}
   <div class="sbnav">
     <div class="nb">Produção</div>
     <button class="ni on" onclick="go(this,'pedidos')">📋 Pedidos</button>
-    <button class="ni" onclick="go(this,'atividades')">⚡ Atividades</button>
     <button class="ni" onclick="go(this,'ordens')">🖨️ Ordens de Prod.</button>
     <div class="nb">Cadastros</div>
     <button class="ni" onclick="go(this,'colaboradores')">👷 Colaboradores</button>
@@ -180,6 +319,7 @@ tbody td{padding:8px 12px;font-size:13px;color:var(--c7);}
     <button class="ni" onclick="go(this,'etapas')">🔢 Etapas Produção</button>
     <button class="ni" id="nav-users" onclick="go(this,'usuarios')">👤 Usuários</button>
     <div class="nb">Serviços</div>
+    <button class="ni" onclick="go(this,'atividades')">⚡ Serviços Internos</button>
     <button class="ni" onclick="go(this,'servicos')">📝 Serv. Externos</button>
     <div class="nb" id="nav-fin-sep">Financeiro</div>
     <button class="ni" id="nav-fin" onclick="go(this,'financeiro')">💰 Custos e Rateio</button>
@@ -221,7 +361,7 @@ tbody td{padding:8px 12px;font-size:13px;color:var(--c7);}
       <div class="kpi ia"><div class="kl">Yield Médio</div><div class="kv" id="pk-yld">—</div></div>
     </div>
     <div class="fbar">
-      <input class="si" id="psrch" type="text" placeholder="🔍 Buscar SKU..." oninput="renderPedidos()" style="width:160px">
+      <input class="si" id="psrch" type="text" placeholder="🔍 Buscar SKU..." oninput="renderPedidos()" style="width:160px"><select id="petapa" onchange="renderPedidos()" style="padding:5px 8px;border-radius:var(--rs);border:1px solid var(--c3);font-size:13px;background:#fff;color:var(--c8);cursor:pointer"><option value="">Todas Etapas</option></select>
       <div class="sep"></div>
       <button class="fb on" onclick="setPF(this,'todos')">Todos</button>
       <button class="fb" onclick="setPF(this,'Atrasado')">⚠ Atrasado</button>
@@ -364,28 +504,20 @@ tbody td{padding:8px 12px;font-size:13px;color:var(--c7);}
             </div>
             <!-- Qtd base: peças enviadas (sempre) -->
             <div class="fr c2">
-              <div class="fi"><label id="op-qen-lbl">Qtd. Peças Enviadas</label><input id="op-qen" type="number" min="0" placeholder="0" oninput="calcOpTotal()"></div>
+              <div class="fi"><label id="op-qen-lbl">Qtd. Peças Enviadas</label><input id="op-qen" type="number" min="0" placeholder="0" oninput="calcOpTotal();if(document.getElementById('op-tipo')&&document.getElementById('op-tipo').value.toLowerCase().includes('crava')){popularPedrasSelect();}"></div>
               <div class="fi"><label id="op-qco-lbl">Qtd. Peças Conformes</label><input id="op-qco" type="number" min="0" placeholder="0"></div>
             </div>
             <div class="fi"><label>Qtd. Não Conforme (peças)</label><input id="op-qnc" type="number" min="0" placeholder="0"></div>
 
             <!-- Bloco dinâmico: Cravação em Cera -->
             <div id="op-cravacao-wrap" style="display:none;background:var(--bl);border:1px solid #BFDBFE;border-radius:var(--rs);padding:10px">
-              <div style="font-size:10px;font-weight:700;color:#1D4ED8;text-transform:uppercase;letter-spacing:.4px;margin-bottom:8px">💎 Cravação em Cera</div>
-              <div class="fr c2">
-                <div class="fi"><label>Qtd. Pedras a Cravar</label><input id="op-pedras" type="number" min="0" placeholder="0" oninput="calcOpTotal()"></div>
-                <div class="fi"><label>Pedras por Peça</label><input id="op-pedras-peca" type="number" min="0" step="0.1" placeholder="ex: 3"></div>
-              </div>
-              <div class="fi" style="margin:0">
-                <label>Tipo de Pedra</label>
-                <select id="op-tipo-pedra" style="width:100%">
-                  <option value="">Selecione ou escolha abaixo...</option>
-                </select>
-                <div style="display:flex;gap:5px;margin-top:4px">
-                  <input id="op-tipo-pedra-custom" type="text" placeholder="Ou digitar: ex: Zircônia 2mm..." style="flex:1;padding:6px 8px;border-radius:var(--rs);border:1px solid var(--c3);font-size:12px;font-family:var(--fn);outline:none">
-                </div>
-                <div id="op-pedras-info" style="margin-top:5px;display:flex;gap:4px;flex-wrap:wrap"></div>
-              </div>
+              <div style="font-size:10px;font-weight:700;color:#1D4ED8;text-transform:uppercase;letter-spacing:.4px;margin-bottom:6px">💎 Cravação em Cera — Automático pelo Catálogo</div>
+              <div id="op-pedras-info" style="margin-bottom:8px;display:flex;flex-direction:column;gap:4px"></div>
+              <div style="background:#fff;border-radius:var(--rs);padding:8px 10px;font-size:12px;color:#1D4ED8;font-weight:600" id="op-pedras-resumo">Selecione SKUs para calcular automaticamente</div>
+              <input type="hidden" id="op-pedras">
+              <input type="hidden" id="op-pedras-peca">
+              <input type="hidden" id="op-tipo-pedra">
+              <input type="hidden" id="op-tipo-pedra-custom">
             </div>
 
             <!-- Bloco dinâmico: Injeção de Cera -->
@@ -469,7 +601,7 @@ tbody td{padding:8px 12px;font-size:13px;color:var(--c7);}
     </div>
     <div class="sh"><span class="st">Serviços Externos</span><button class="btn btnp bsm" onclick="openMServ()">+ Registrar</button></div>
     <div class="fbar">
-      <input class="si" id="svsrch" type="text" placeholder="🔍 Buscar..." oninput="renderServicos()" style="width:160px">
+      <input class="si" id="svsrch" type="text" placeholder="🔍 Buscar prestador/SKU..." oninput="renderServicos()" style="width:190px"><select id="svtipo" onchange="renderServicos()" style="padding:5px 8px;border-radius:var(--rs);border:1px solid var(--c3);font-size:13px;background:#fff;color:var(--c8);cursor:pointer"><option value="">Todos os Tipos</option></select>
       <button class="fb on" onclick="setSVF(this,'todos')">Todos</button>
       <button class="fb" onclick="setSVF(this,'Em andamento')">Em andamento</button>
       <button class="fb" onclick="setSVF(this,'Concluído')">Concluídos</button>
@@ -485,12 +617,25 @@ tbody td{padding:8px 12px;font-size:13px;color:var(--c7);}
   <!-- FINANCEIRO -->
   <div id="pg-financeiro" class="page">
     <!-- KPIs topo -->
-    <div class="kpis" style="grid-template-columns:repeat(5,1fr);margin-bottom:14px">
+    <div class="kpis" style="grid-template-columns:repeat(5,1fr);margin-bottom:6px">
       <div class="kpi ga"><div class="kl">Insumos / Matéria-Prima</div><div class="kv" id="cf-tot">—</div></div>
       <div class="kpi" style="border-left:3px solid #7C3AED"><div class="kl">Serv. Externos</div><div class="kv" id="cf-sv">—</div></div>
       <div class="kpi wa"><div class="kl">Folha Pagamento</div><div class="kv" id="cf-fp">—</div></div>
       <div class="kpi ia"><div class="kl">Total Mês</div><div class="kv" id="cf-total">—</div></div>
       <div class="kpi da"><div class="kl">Custo Médio / Peça</div><div class="kv" id="cf-peca">—</div></div>
+    </div>
+    <!-- KPIs Previsto x Realizado -->
+    <div class="kpis" style="grid-template-columns:repeat(2,1fr);margin-bottom:14px">
+      <div class="kpi" style="border-left:3px solid #F59E0B;background:#FFFBEB">
+        <div class="kl" style="color:#92400E">⏳ Serv. Externos Previstos (Em andamento)</div>
+        <div class="kv" id="cf-sv-prev" style="color:#B45309">—</div>
+        <div class="ks" id="cf-sv-prev-cnt" style="color:#92400E">— serviços em andamento</div>
+      </div>
+      <div class="kpi" style="border-left:3px solid #059669;background:#ECFDF5">
+        <div class="kl" style="color:#065F46">✅ Serv. Externos Realizados (Concluídos)</div>
+        <div class="kv" id="cf-sv-real" style="color:#059669">—</div>
+        <div class="ks" id="cf-sv-real-cnt" style="color:#065F46">— serviços concluídos</div>
+      </div>
     </div>
 
     <!-- Abas de navegação dentro do financeiro -->
@@ -533,6 +678,7 @@ tbody td{padding:8px 12px;font-size:13px;color:var(--c7);}
       </div>
 
       <!-- Cards de rateio por SKU -->
+      <div style="display:flex;gap:7px;align-items:center;margin-bottom:10px;padding:7px 10px;background:var(--gp);border-radius:var(--rs);border:1px solid var(--gl);flex-wrap:wrap"><span style="font-size:12px;color:var(--gd);font-weight:500">📋 Selecionados: <span id="rp-sel-cnt">0</span></span><button class="btn btsm btnp" onclick="imprimirCardsSelecionados()" style="margin-left:auto">🖨️ Imprimir selecionados</button><button class="btn btsm btng" onclick="selecionarTodosCards(true)">Todos</button><button class="btn btsm btng" onclick="selecionarTodosCards(false)">Nenhum</button></div>
       <div id="rateio-cards" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(340px,1fr));gap:14px">
         <div style="padding:30px;text-align:center;color:var(--c4);grid-column:1/-1">Configure os parâmetros e clique em "⚡ Calcular Rateio"</div>
       </div>
@@ -586,7 +732,7 @@ tbody td{padding:8px 12px;font-size:13px;color:var(--c7);}
     <div id="tab-servicos" class="fin-tab" style="display:none;background:#fff;border-radius:0 var(--rr) var(--rr) var(--rr);border:1px solid var(--c2);padding:16px">
       <div style="font-size:15px;font-weight:700;color:var(--c9);margin-bottom:14px">Serviços Externos Realizados</div>
       <div class="tc" style="overflow-x:auto"><table><thead><tr>
-        <th>Prestador</th><th>SKU</th><th>Tipo de Serviço</th><th>Qtd</th><th>Custo Unit.</th><th>Total R$</th><th>Status</th>
+        <th>Prestador</th><th>SKU</th><th>Tipo de Serviço</th><th>Qtd. / Detalhe</th><th>Custo Unit.</th><th>Total R$</th><th>Status</th>
       </tr></thead><tbody id="svptb"></tbody></table></div>
     </div>
 
@@ -599,105 +745,26 @@ tbody td{padding:8px 12px;font-size:13px;color:var(--c7);}
         </div>
         <button class="btn btnp" onclick="openMPreco()">+ Preço</button>
       </div>
-      <div class="tc"><table><thead><tr><th>Tipo de Serviço</th><th>Prestador</th><th>R$/Peça</th><th>Válido Desde</th><th>Observação</th><th></th></tr></thead><tbody id="pretb"></tbody></table></div>
+      <div class="tc"><table><thead><tr><th>Tipo de Serviço</th><th>Prestador</th><th>Valor</th><th>Unidade</th><th>Vigência</th><th>Observação</th><th></th><th></th></tr></thead><tbody id="pretb"></tbody></table></div>
     </div>
   </div>
 
   <!-- FOLHA -->
   <div id="pg-folha" class="page">
     <div class="kpis">
-      <div class="kpi ga"><div class="kl">Total Folha</div><div class="kv" id="fp-tot">—</div></div>
+      <div class="kpi ga"><div class="kl">Total Folha (Real)</div><div class="kv" id="fp-tot">—</div></div>
       <div class="kpi wa"><div class="kl">Colaboradores</div><div class="kv" id="fp-qtd">—</div></div>
-      <div class="kpi ia"><div class="kl">Média Salário</div><div class="kv" id="fp-med">—</div></div>
-      <div class="kpi da"><div class="kl">Encargos</div><div class="kv" id="fp-enc">—</div></div>
+      <div class="kpi ia"><div class="kl">Média Salário Real</div><div class="kv" id="fp-med">—</div></div>
+      <div class="kpi da"><div class="kl">Total Encargos</div><div class="kv" id="fp-enc">—</div></div>
     </div>
-    <div class="fbar"><input class="si" id="fpmes" type="month" onchange="renderFolha()" style="width:145px"><button class="btn btnp bsm" onclick="openMFP()">+ Pagamento</button></div>
+    <div class="fbar"><button class="btn btnp bsm" onclick="openMFP()">+ Colaborador</button></div>
     <div class="tc">
-      <div class="tch"><span class="tct">Folha de Pagamento</span><span class="cb" id="fpcnt">0</span></div>
-      <table><thead><tr><th>Colaborador</th><th>Salário Base</th><th>Encargos</th><th>Outros</th><th>Total</th><th>Competência</th><th></th></tr></thead>
-      <tbody id="fptb"></tbody></table>
-    </div>
-  </div>
-
-  <!-- ESTOQUE -->
-  <div id="pg-estoque" class="page">
-    <div class="kpis">
-      <div class="kpi ga"><div class="kl">Insumos</div><div class="kv" id="est-tot">—</div></div>
-      <div class="kpi da"><div class="kl">Abaixo Mínimo</div><div class="kv" id="est-al">—</div></div>
-      <div class="kpi wa"><div class="kl">Mov. Hoje</div><div class="kv" id="est-mv">—</div></div>
-      <div class="kpi ia"><div class="kl">Valor Estoque</div><div class="kv" id="est-vl">—</div></div>
-    </div>
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:13px">
-      <div>
-        <div class="sh"><span class="st">Insumos em Estoque</span><button class="btn btnp bsm" onclick="openMIns()">+ Cadastrar</button></div>
-        <div class="tc"><table><thead><tr><th>Insumo</th><th>Un.</th><th>Estoque</th><th>Mínimo</th><th>Situação</th><th>R$/Un.</th><th></th></tr></thead><tbody id="esttb"></tbody></table></div>
-      </div>
-      <div>
-        <div class="sh"><span class="st">Registrar Movimentação</span></div>
-        <div class="fmc"><div class="fmb">
-          <div class="fi"><label class="req">Insumo</label><select id="mov-ins"><option value="">Selecione</option></select></div>
-          <div class="fr c2">
-            <div class="fi"><label class="req">Tipo</label><select id="mov-tipo"><option value="entrada">📥 Entrada</option><option value="saida">📤 Saída</option><option value="ajuste">🔧 Ajuste</option></select></div>
-            <div class="fi"><label class="req">Quantidade</label><input id="mov-qtd" type="number" min="0" step="0.01"></div>
-          </div>
-          <div class="fr c2">
-            <div class="fi"><label>Custo unit. R$</label><input id="mov-custo" type="number" min="0" step="0.01"></div>
-            <div class="fi"><label>SKU vinculado</label><input id="mov-sku" type="text" oninput="this.value=this.value.toUpperCase()"></div>
-          </div>
-          <div class="fi"><label>Motivo</label><input id="mov-motivo" type="text"></div>
-        </div><div class="fmf"><button type="button" class="btn btnp" style="flex:1" onclick="registrarMov()">✓ Registrar Movimentação</button></div></div>
-        <div style="margin-top:12px">
-          <div class="sh"><span class="st">Histórico Recente</span></div>
-          <div class="tc"><table><thead><tr><th>Insumo</th><th>Tipo</th><th>Qtd</th><th>SKU</th><th>Data</th></tr></thead><tbody id="movtb"></tbody></table></div>
-        </div>
-      </div>
-    </div>
-  </div>
-
-  <!-- CATÁLOGO -->
-  <div id="pg-catalogo" class="page">
-    <div class="fbar">
-      <input class="si" id="catsrch" type="text" placeholder="🔍 Código ou descrição..." oninput="renderCatalogo()" style="width:210px">
-      <span id="catcnt" style="font-size:12px;color:var(--c5)">0 modelos</span>
-      <div style="flex:1"></div>
-      <button class="btn btnp bsm" onclick="openMModelo()">+ Modelo</button>
-    </div>
-    <div class="cards" id="catgrid"><div class="loading"><div class="spinner"></div></div></div>
-  </div>
-
-  <!-- EQUIPAMENTOS -->
-  <div id="pg-equipamentos" class="page">
-    <div class="kpis">
-      <div class="kpi ga"><div class="kl">Total</div><div class="kv" id="eq-tot">—</div></div>
-      <div class="kpi wa"><div class="kl">Em Manutenção</div><div class="kv" id="eq-man">—</div></div>
-      <div class="kpi ia"><div class="kl">Uso Hoje</div><div class="kv" id="eq-uso">—</div></div>
-      <div class="kpi da"><div class="kl">Inativos</div><div class="kv" id="eq-ina">—</div></div>
-    </div>
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:13px">
-      <div>
-        <div class="sh"><span class="st">Equipamentos e Ferramentas</span><button class="btn btnp bsm" onclick="openMEquip()">+ Novo</button></div>
-        <div class="tc"><table><thead><tr><th>Nome</th><th>Tipo</th><th>Estado</th><th>Setor</th><th>Nº Série</th><th></th></tr></thead><tbody id="eqtb"></tbody></table></div>
-      </div>
-      <div>
-        <div class="sh"><span class="st">Registrar Uso</span></div>
-        <div class="fmc"><div class="fmb">
-          <div class="fi"><label class="req">Equipamento</label><select id="uso-eq"><option value="">Selecione</option></select></div>
-          <div class="fi"><label class="req">Colaborador</label><select id="uso-col"><option value="">Selecione</option></select></div>
-          <div class="fr c2">
-            <div class="fi"><label>SKU</label><input id="uso-sku" type="text" oninput="this.value=this.value.toUpperCase()"></div>
-            <div class="fi"><label>Pedido</label><select id="uso-ped"><option value="">—</option></select></div>
-          </div>
-          <div class="fr c2">
-            <div class="fi"><label>Início</label><input id="uso-ini" type="datetime-local"></div>
-            <div class="fi"><label>Fim</label><input id="uso-fim" type="datetime-local"></div>
-          </div>
-          <div class="fi"><label>Observação</label><input id="uso-obs" type="text"></div>
-        </div><div class="fmf"><button type="button" class="btn btnp" style="flex:1" onclick="registrarUso()">✓ Registrar Uso</button></div></div>
-        <div style="margin-top:12px">
-          <div class="sh"><span class="st">Histórico de Uso</span></div>
-          <div class="tc"><table><thead><tr><th>Equipamento</th><th>Colaborador</th><th>SKU</th><th>Início</th><th>Fim</th><th>Obs.</th></tr></thead><tbody id="usotb"></tbody></table></div>
-        </div>
-      </div>
+      <div class="sh"><span class="st">Equipe e Salários</span><span class="sbdg" id="fpcnt">0 colaboradores</span></div>
+      <table><thead><tr>
+        <th>Colaborador</th><th>Função</th><th>Admissão</th><th>Aniversário</th>
+        <th>Salário Base</th><th>Encargos</th><th>Outros</th>
+        <th style="color:var(--g)">Salário Real</th><th>Ações</th>
+      </tr></thead><tbody id="fptb"></tbody></table>
     </div>
   </div>
 
@@ -808,6 +875,37 @@ tbody td{padding:8px 12px;font-size:13px;color:var(--c7);}
     </div>
   </div>
 
+  <!-- PÁGINA: CATÁLOGO SKUs (Fotos) -->
+  <div id="pg-catalogo" class="page">
+    <div class="fbar">
+      <input class="si" id="cat-srch" type="text" placeholder="🔍 Buscar SKU..." oninput="renderCatalogo()" style="width:200px">
+      <button class="btn btnp bsm" onclick="openMModelo()">+ Modelo</button>
+    </div>
+    <div id="catgrid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:12px">
+      <div style="padding:20px;color:var(--c4)">Carregando...</div>
+    </div>
+  </div>
+
+  <!-- PÁGINA: EQUIPAMENTOS -->
+  <div id="pg-equipamentos" class="page">
+    <div class="kpis">
+      <div class="kpi ga"><div class="kl">Total</div><div class="kv" id="eq-tot">—</div></div>
+      <div class="kpi da"><div class="kl">Em Manutenção</div><div class="kv" id="eq-man">—</div></div>
+      <div class="kpi ia"><div class="kl">Ativos</div><div class="kv" id="eq-ati">—</div></div>
+      <div class="kpi wa"><div class="kl">Uso Hoje</div><div class="kv" id="eq-uso">—</div></div>
+    </div>
+    <div class="tc" style="margin-bottom:14px">
+      <div class="sh"><span class="st">Equipamentos</span><button class="btn btsm btnp" style="margin-left:auto" onclick="openMEquip()">+ Equipamento</button></div>
+      <table><thead><tr><th>Nome</th><th>Tipo</th><th>Nº Série</th><th>Setor</th><th>Estado</th><th>Observação</th><th></th></tr></thead>
+      <tbody id="eq-tb"></tbody></table>
+    </div>
+    <div style="margin-top:12px">
+      <div class="sh"><span class="st">Histórico de Uso</span></div>
+      <div class="tc"><table><thead><tr><th>Equipamento</th><th>Colaborador</th><th>SKU</th><th>Início</th><th>Fim</th><th>Obs.</th></tr></thead><tbody id="usotb"></tbody></table></div>
+    </div>
+  </div>
+
+
 <!-- MODAIS -->
 <div class="moverlay" id="m-pedido"><div class="mdialog wide">
   <div class="mhead"><span class="mtitle" id="mped-t">Novo Pedido</span><button class="mclose" onclick="closeM('m-pedido')">×</button></div>
@@ -815,7 +913,7 @@ tbody td{padding:8px 12px;font-size:13px;color:var(--c7);}
     <div class="fr c3"><div class="fi"><label class="req">Nº Pedido</label><input id="mped-num" type="number" min="1"></div><div class="fi"><label class="req">Solicitante</label><input id="mped-sol" type="text"></div><div class="fi"><label class="req">Data Pedido</label><input id="mped-dat" type="date"></div></div>
     <div class="fr c2"><div class="fi"><label class="req">Data Entrega</label><input id="mped-ent" type="date"></div><div class="fi"><label>Observação</label><input id="mped-obs" type="text"></div></div>
     <div class="sku-builder"><div class="sku-bh"><span class="sku-bht">SKUs do Pedido</span><button type="button" class="btn btnp bxs" onclick="addSkuRow()">+ SKU</button></div>
-    <div style="display:grid;grid-template-columns:1fr 80px 93px 26px;gap:5px;padding:5px 8px;background:var(--c1);border-bottom:1px solid var(--c2)"><span style="font-size:10px;font-weight:600;color:var(--c5);text-transform:uppercase">SKU</span><span style="font-size:10px;font-weight:600;color:var(--c5);text-transform:uppercase">Qtd.</span><span style="font-size:10px;font-weight:600;color:var(--c5);text-transform:uppercase">Custo/Peça</span><span></span></div>
+    <div style="display:grid;grid-template-columns:1fr 80px 26px;gap:5px;padding:5px 8px;background:var(--c1);border-bottom:1px solid var(--c2)"><span style="font-size:10px;font-weight:600;color:var(--c5);text-transform:uppercase">SKU</span><span style="font-size:10px;font-weight:600;color:var(--c5);text-transform:uppercase">Qtd.</span><span></span></div>
     <div id="skurows" style="max-height:180px;overflow-y:auto"></div></div>
   </div>
   <div class="mfoot"><button class="btn btng" onclick="closeM('m-pedido')">Cancelar</button><button class="btn btnp" onclick="salvarPedido()">💾 Salvar</button></div>
@@ -826,11 +924,22 @@ tbody td{padding:8px 12px;font-size:13px;color:var(--c7);}
   <div class="mbody"><input type="hidden" id="mit-id">
     <div class="fr c2"><div class="fi"><label>SKU</label><input id="mit-sku" type="text"></div><div class="fi"><label>Qtd. Solicitada</label><input id="mit-qtd" type="number" min="0" oninput="calcEntregaPct()"></div></div>
     <div style="background:var(--gl);border:1px solid var(--g);border-radius:var(--rs);padding:10px;margin-bottom:9px">
-      <div style="font-size:10px;font-weight:700;color:var(--gd);text-transform:uppercase;letter-spacing:.5px;margin-bottom:7px">📦 Entrega Parcial</div>
-      <div class="fr c2">
-        <div class="fi"><label>Qtd. Entregue</label><input id="mit-ent" type="number" min="0" value="0" oninput="calcEntregaPct()"></div>
-        <div class="fi"><label style="color:var(--gd)">% Entregue</label><div id="mit-ent-pct" style="padding:7px 9px;background:#fff;border:1px solid var(--c3);border-radius:var(--rs);font-size:14px;font-weight:700;color:var(--g)">0%</div></div>
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+        <div style="font-size:10px;font-weight:700;color:var(--gd);text-transform:uppercase;letter-spacing:.5px">📦 Entregas ao Almoxarifado</div>
+        <div id="mit-ent-pct" style="padding:3px 9px;background:#fff;border:1px solid var(--g);border-radius:20px;font-size:12px;font-weight:700;color:var(--g)">0%</div>
       </div>
+      <!-- Histórico de entregas anteriores -->
+      <div id="mit-entregas-hist" style="margin-bottom:8px;display:flex;flex-direction:column;gap:5px"></div>
+      <!-- Nova entrega -->
+      <div style="background:#fff;border:1px dashed var(--g);border-radius:var(--rs);padding:8px">
+        <div style="font-size:10px;font-weight:600;color:var(--gd);margin-bottom:6px">+ Nova Entrega</div>
+        <div class="fr c2">
+          <div class="fi" style="margin:0"><label>Qtd. Entregue</label><input id="mit-ent" type="number" min="0" value="0" oninput="calcEntregaPct()"></div>
+          <div class="fi" style="margin:0"><label>Data da Entrega</label><input id="mit-ent-data" type="date"></div>
+        </div>
+        <div class="fi" style="margin-top:6px;margin-bottom:0"><label>Observação</label><input id="mit-ent-obs" type="text" placeholder="ex: Entrega parcial lote 1..."></div>
+      </div>
+      <input type="hidden" id="mit-ent-total">
     </div>
     <div style="background:var(--rl);border:1px solid #FECACA;border-radius:var(--rs);padding:10px;margin-bottom:9px">
       <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
@@ -842,7 +951,7 @@ tbody td{padding:8px 12px;font-size:13px;color:var(--c7);}
       </div>
     </div>
     <div class="fr c2"><div class="fi"><label>Etapa</label><select id="mit-eta"></select></div><div class="fi"><label>Status</label><select id="mit-sta"><option>Em andamento</option><option>Atrasado</option><option>Concluído</option></select></div></div>
-    <div class="fr c2"><div class="fi"><label>Atraso (dias)</label><input id="mit-atr" type="number" min="0" value="0"></div><div class="fi"><label>Yield %</label><input id="mit-yld" type="number" min="0" step="0.1"></div></div><input type="hidden" id="mit-cst">
+    <div class="fr c2"><div class="fi"><label>Atraso (dias)</label><input id="mit-atr" type="number" min="0" value="0"></div><div class="fi"><label>Yield %</label><input id="mit-yld" type="number" min="0" step="0.1"></div></div><div class="fi" style="margin-bottom:9px"><label style="color:var(--c5)">📅 Data do Pedido</label><input id="mit-dat-ped" type="text" readonly style="background:var(--c1);color:var(--c6);cursor:default"></div><input type="hidden" id="mit-cst">
   </div>
   <div class="mfoot"><button class="btn btng" onclick="closeM('m-item')">Cancelar</button><button class="btn btnp" onclick="salvarItem()">💾 Salvar</button></div>
 </div></div>
@@ -913,19 +1022,57 @@ tbody td{padding:8px 12px;font-size:13px;color:var(--c7);}
   <div class="mhead"><span class="mtitle" id="msv-t">Registrar Serviço</span><button class="mclose" onclick="closeM('m-serv')">×</button></div>
   <div class="mbody"><input type="hidden" id="msv-id">
     <div class="fr c2"><div class="fi"><label class="req">Prestador</label><select id="msv-prs"><option value="">Selecione</option></select></div><div class="fi"><label class="req">Tipo de Serviço</label><select id="msv-tip" onchange="checkTipoServ()"><option value="">Selecione</option></select></div></div>
-    <div class="fr c2"><div class="fi"><label class="req">SKU</label><input id="msv-sku" type="text" oninput="this.value=this.value.toUpperCase()"></div><div class="fi"><label>Pedido</label><select id="msv-ped"><option value="">—</option></select></div></div>
+    <div class="fr c2"><div class="fi"><label class="req">SKU</label><input id="msv-sku" type="text" oninput="this.value=this.value.toUpperCase();checkTipoServSku();var _t=v('msv-tip');if(_t&&_t.toLowerCase().includes('inje'))atualizarInjecaoCatalogo();"></div><div class="fi"><label>Pedido</label><select id="msv-ped"><option value="">—</option></select></div></div>
     <div class="fr c2"><div class="fi"><label>Data Envio</label><input id="msv-env" type="date"></div><div class="fi"><label>Data Retorno</label><input id="msv-ret" type="date"></div></div>
     <div class="fr c3">
-      <div class="fi"><label id="msv-qen-lbl">Qtd. Enviada (peças)</label><input id="msv-qen" type="number" min="0"></div>
+      <div class="fi"><label id="msv-qen-lbl">Qtd. Enviada (peças)</label><input id="msv-qen" type="number" min="0" oninput="calcTotalCravacao()"></div>
       <div class="fi"><label id="msv-qco-lbl">Qtd. Conforme (peças)</label><input id="msv-qco" type="number" min="0"></div>
-      <div class="fi" id="msv-cus-wrap"><label>Custo Unit. R$</label><input id="msv-cus" type="number" min="0" step="0.001"></div>
+      <div class="fi" id="msv-cus-wrap"><label>Custo Unit. R$ (por pedra)</label><input id="msv-cus" type="number" min="0" step="0.001" oninput="calcTotalCravacao()"></div>
+    </div>
+    <div id="msv-cravacao-wrap" style="display:none;background:var(--bl);border:1px solid #BFDBFE;border-radius:var(--rs);padding:10px;margin-bottom:4px">
+      <div style="font-size:11px;font-weight:600;color:#1D4ED8;text-transform:uppercase;letter-spacing:.4px;margin-bottom:8px">💎 Cravação — Pedras do Catálogo</div>
+      <div id="msv-pedras-info" style="font-size:11px;color:#1D4ED8;margin-bottom:8px;background:rgba(255,255,255,.6);padding:5px 8px;border-radius:4px">Carregando pedras do SKU...</div>
+      <div class="fr c2">
+        <div class="fi"><label>Pedras/Peça (do catálogo)</label><input id="msv-pedras-pca" type="number" min="0" step="0.1" placeholder="ex: 3" oninput="calcTotalCravacao()"></div>
+        <div class="fi"><label>Total Pedras</label><div id="msv-pedras-tot" style="padding:7px 9px;background:#fff;border:1px solid var(--c3);border-radius:var(--rs);font-size:13px;font-weight:700;color:#1D4ED8">0 pedras</div></div>
+      </div>
+      <div style="background:#fff;border-radius:var(--rs);padding:7px 10px;font-size:13px;color:#1D4ED8">
+        Custo Cravação: <strong id="msv-crav-tot">R$ 0,00</strong>
+        <span style="font-size:10px;color:#6B7280;margin-left:6px">(pedras × custo unit.)</span>
+      </div>
+    </div>
+    <div id="msv-injecao-wrap" style="display:none;background:var(--gp);border:1px solid var(--gl);border-radius:var(--rs);padding:10px;margin-bottom:4px">
+      <div style="font-size:11px;font-weight:600;color:var(--gd);text-transform:uppercase;letter-spacing:.4px;margin-bottom:8px">💉 Injeção de Cera — Cálculo Automático</div>
+      <div id="msv-inj-info" style="font-size:11px;color:var(--gd);background:rgba(255,255,255,.6);padding:5px 8px;border-radius:4px;margin-bottom:8px">Digite o SKU para carregar peças/injeção do catálogo</div>
+      <div class="fr c2">
+        <div class="fi"><label>Qtd. Peças Solicitadas</label><input id="msv-inj-pecas" type="number" min="0" placeholder="ex: 2000" oninput="calcInjecoes()"></div>
+        <div class="fi"><label>Peças por Injeção (do catálogo)</label><div id="msv-inj-ppi" style="padding:7px 9px;background:#fff;border:1px solid var(--c3);border-radius:var(--rs);font-size:13px;font-weight:700;color:var(--gd)">—</div></div>
+      </div>
+      <div style="background:#fff;border-radius:var(--rs);padding:7px 10px;font-size:13px;color:var(--gd)">
+        Injeções necessárias: <strong id="msv-inj-tot">0</strong>
+        <span style="font-size:10px;color:var(--c5);margin-left:6px">(peças ÷ peças/injeção)</span>
+      </div>
     </div>
     <div id="msv-arvore-wrap" style="display:none;background:var(--al);border:1px solid #F59E0B;border-radius:var(--rs);padding:10px;margin-bottom:4px">
       <div style="font-size:11px;font-weight:600;color:#92400E;text-transform:uppercase;letter-spacing:.4px;margin-bottom:8px">🌳 Pagamento por Árvores Montadas</div>
       <div class="fr c2"><div class="fi"><label>Qtd. Árvores Montadas</label><input id="msv-arv-qtd" type="number" min="0" oninput="calcTotalArvores()"></div><div class="fi"><label>Valor por Árvore R$</label><input id="msv-arv-val" type="number" min="0" step="0.01" oninput="calcTotalArvores()"></div></div>
       <div style="background:#fff;border-radius:var(--rs);padding:7px 10px;font-size:13px;color:#92400E">Total Árvores: <strong id="msv-arv-tot">R$ 0,00</strong></div>
     </div>
-    <div class="fr c2"><div class="fi"><label>Status</label><select id="msv-sta"><option>Em andamento</option><option>Concluído</option><option>Atrasado</option></select></div><div class="fi"><label>Observação</label><input id="msv-obs" type="text"></div></div>
+    <div class="fr c2"><div class="fi"><label>Status</label><select id="msv-sta" onchange="checkRetornoServ()"><option>Em andamento</option><option>Concluído</option><option>Atrasado</option></select></div><div class="fi"><label>Observação</label><input id="msv-obs" type="text"></div></div>
+    <div id="msv-retorno-wrap" style="display:none;background:var(--gp);border:1px solid var(--gl);border-radius:var(--rs);padding:10px;margin-top:4px">
+      <div style="font-size:11px;font-weight:700;color:var(--gd);text-transform:uppercase;letter-spacing:.4px;margin-bottom:8px">📦 Registrar Retorno do Serviço</div>
+      <div class="fr c2">
+        <div class="fi"><label>Qtd. Conforme</label><input id="msv-ret-conf" type="number" min="0" placeholder="0" oninput="recalcValorRetorno()"></div>
+        <div class="fi"><label>Qtd. Não Conforme</label><input id="msv-ret-nc" type="number" min="0" placeholder="0" oninput="recalcValorRetorno()"></div>
+      </div>
+      <div id="msv-ret-calc" style="background:#fff;border-radius:var(--rs);padding:8px 10px;font-size:12px;color:var(--gd);display:none">
+        <div style="display:flex;justify-content:space-between;align-items:center">
+          <span id="msv-ret-desc">—</span>
+          <strong id="msv-ret-total" style="font-size:14px">R$ 0,00</strong>
+        </div>
+        <div id="msv-ret-desc2" style="font-size:10.5px;color:var(--c5);margin-top:2px"></div>
+      </div>
+    </div>
   </div>
   <div class="mfoot"><button class="btn btng" onclick="closeM('m-serv')">Cancelar</button><button class="btn btnp" onclick="salvarServ()">💾 Salvar</button></div>
 </div></div>
@@ -972,12 +1119,25 @@ tbody td{padding:8px 12px;font-size:13px;color:var(--c7);}
   <div class="mfoot"><button class="btn btng" onclick="closeM('m-cf')">Cancelar</button><button class="btn btnp" onclick="salvarCF()">💾 Salvar</button></div>
 </div></div>
 
-<div class="moverlay" id="m-preco"><div class="mdialog">
-  <div class="mhead"><span class="mtitle" id="mprc-t">Registrar Preço de Serviço</span><button class="mclose" onclick="closeM('m-preco')">×</button></div>
-  <div class="mbody"><input type="hidden" id="mprc-id">
-    <div class="fr c2"><div class="fi"><label class="req">Tipo de Serviço</label><select id="mprc-tip"><option value="">Selecione</option></select></div><div class="fi"><label>Prestador</label><select id="mprc-prs"><option value="">Todos/Padrão</option></select></div></div>
-    <div class="fr c2"><div class="fi"><label class="req">Valor R$/Peça</label><input id="mprc-val" type="number" min="0" step="0.001" placeholder="0.000"></div><div class="fi"><label>Válido desde</label><input id="mprc-data" type="date"></div></div>
-    <div class="fi"><label>Observação</label><input id="mprc-obs" type="text" placeholder="ex: reajuste, negociado, etc."></div>
+<div class="moverlay" <div class="moverlay" id="m-preco"><div class="mdialog">
+  <div class="mhead"><span class="mtitle">Tabela de Preços — Preço de Serviço</span><button class="mclose" onclick="closeM('m-preco')">×</button></div>
+  <div class="mbody">
+    <input type="hidden" id="mpr-id">
+    <div class="fr c2">
+      <div class="fi"><label class="req">Tipo de Serviço</label><select id="mpr-tip"><option value="">Selecione</option></select></div>
+      <div class="fi"><label>Prestador <span style="font-size:10px;color:var(--c5)">(opcional — vazio = padrão)</span></label><select id="mpr-prs"><option value="">Padrão (todos)</option></select></div>
+    </div>
+    <div class="fr c3">
+      <div class="fi"><label class="req">Valor R$</label><input id="mpr-val" type="number" min="0" step="0.0001" placeholder="0.0000"></div>
+      <div class="fi"><label>Unidade</label><select id="mpr-un"><option value="peca">por peça</option><option value="injecao">por injeção</option><option value="pedra">por pedra</option><option value="arvore">por árvore</option></select></div>
+      <div class="fi"><label>Válido Desde</label><input id="mpr-vig" type="date"></div>
+    </div>
+    <div class="fi"><label>Observação</label><input id="mpr-obs" type="text" placeholder="ex: Reajuste abril/2026"></div>
+  </div>
+  <div class="mfoot"><button class="btn btng" onclick="closeM('m-preco')">Cancelar</button><button class="btn btnp" onclick="salvarPreco()">💾 Salvar</button></div>
+</div></div>
+    <div class="fr c2"><div class="fi"><label class="req">Valor R$/Peça</label><input id="mpr-val2" type="number" min="0" step="0.001" placeholder="0.000"></div><div class="fi"><label>Válido desde</label><input id="mpr-data2" type="date"></div></div>
+    <div class="fi"><label>Observação</label><input id="mpr-obs2" type="text" placeholder="ex: reajuste, negociado, etc."></div>
   </div>
   <div class="mfoot"><button class="btn btng" onclick="closeM('m-preco')">Cancelar</button><button class="btn btnp" onclick="salvarPreco()">💾 Salvar</button></div>
 </div></div>
@@ -1043,11 +1203,31 @@ tbody td{padding:8px 12px;font-size:13px;color:var(--c7);}
 </div></div>
 
 <div class="moverlay" id="m-fp"><div class="mdialog">
-  <div class="mhead"><span class="mtitle">Registrar Pagamento</span><button class="mclose" onclick="closeM('m-fp')">×</button></div>
+  <div class="mhead"><span class="mtitle" id="mfp-titulo">Novo Colaborador</span><button class="mclose" onclick="closeM('m-fp')">×</button></div>
   <div class="mbody">
-    <div class="fr c2"><div class="fi"><label class="req">Colaborador</label><select id="mfp-col"><option value="">Selecione</option></select></div><div class="fi"><label class="req">Competência</label><input id="mfp-mes" type="month"></div></div>
-    <div class="fr c3"><div class="fi"><label>Salário Base R$</label><input id="mfp-sal" type="number" min="0" step="0.01" oninput="calcFP()"></div><div class="fi"><label>Encargos R$</label><input id="mfp-enc" type="number" min="0" step="0.01" oninput="calcFP()"></div><div class="fi"><label>Outros R$</label><input id="mfp-out" type="number" min="0" step="0.01" oninput="calcFP()"></div></div>
-    <div style="background:var(--gp);border-radius:var(--rs);padding:8px 11px;font-size:13px;color:var(--gd)">Total: <strong id="mfp-tot">R$ 0,00</strong></div>
+    <input type="hidden" id="mfp-id">
+    <div class="fr c2">
+      <div class="fi"><label class="req">Nome</label><input id="mfp-col" type="text" placeholder="Nome completo"></div>
+      <div class="fi"><label>Função / Cargo</label><input id="mfp-func" type="text" placeholder="ex: Lapidador"></div>
+    </div>
+    <div class="fr c2">
+      <div class="fi"><label>Data de Admissão</label><input id="mfp-adm" type="date"></div>
+      <div class="fi"><label>Data de Aniversário</label><input id="mfp-nasc" type="date"></div>
+    </div>
+    <div class="fr c3">
+      <div class="fi"><label>Salário Base R$</label><input id="mfp-sal" type="number" min="0" step="0.01" oninput="calcFolhaPreview()"></div>
+      <div class="fi"><label>Encargos R$</label><input id="mfp-enc" type="number" min="0" step="0.01" oninput="calcFolhaPreview()"></div>
+      <div class="fi"><label>Outros R$</label><input id="mfp-out" type="number" min="0" step="0.01" oninput="calcFolhaPreview()"></div>
+    </div>
+    <div class="fi">
+      <label style="color:var(--g);font-weight:600">💰 Salário Real (base de cálculo do rateio)</label>
+      <input id="mfp-real" type="number" min="0" step="0.01" oninput="calcFolhaPreview()" style="border:1.5px solid var(--g);font-size:14px;font-weight:600">
+      <div style="font-size:10px;color:var(--c5);margin-top:3px">Informe o custo real do colaborador incluindo todos os impostos e encargos trabalhistas</div>
+    </div>
+    <div style="background:var(--gp);border-radius:var(--rs);padding:8px 11px;font-size:13px;color:var(--gd);display:flex;justify-content:space-between">
+      <span>Base (sal+enc+out): <strong id="mfp-tot">R$ 0,00</strong></span>
+      <span>Salário Real: <strong id="mfp-real-show" style="color:var(--g)">R$ 0,00</strong></span>
+    </div>
   </div>
   <div class="mfoot"><button class="btn btng" onclick="closeM('m-fp')">Cancelar</button><button class="btn btnp" onclick="salvarFP()">💾 Salvar</button></div>
 </div></div>
@@ -1078,7 +1258,8 @@ tbody td{padding:8px 12px;font-size:13px;color:var(--c7);}
   <div class="mhead"><span class="mtitle" id="mmod-t">Novo Modelo</span><button class="mclose" onclick="closeM('m-modelo')">×</button></div>
   <div class="mbody"><input type="hidden" id="mmod-id">
     <div class="fr c2"><div class="fi"><label class="req">Código SKU</label><input id="mmod-cod" type="text" oninput="this.value=this.value.toUpperCase()"></div><div class="fi"><label>Descrição</label><input id="mmod-desc" type="text"></div></div>
-    <div class="fr c3"><div class="fi"><label>Peso Latão (g)</label><input id="mmod-peso" type="number" min="0" step="0.01"></div><div class="fi"><label>Qtd. Borrachas em Estoque</label><input id="mmod-bor" type="number" min="0" value="1"></div><div class="fi"><label>Peças por Borracha</label><input id="mmod-obs" type="number" min="0" placeholder="ex: 4"></div></div>
+    <div class="fr c3"><div class="fi"><label>Peso Latão (g)</label><input id="mmod-peso" type="number" min="0" step="0.01"></div><div class="fi"><label>Qtd. Borrachas em Estoque</label><input id="mmod-bor" type="number" min="0" value="1"></div><div class="fi"><label>Peças por Injeção</label><input id="mmod-obs" type="number" min="0" placeholder="ex: 4"></div></div>
+    <div class="fi"><label>Localização da Borracha</label><input id="mmod-loc" type="text" placeholder="ex: Gaveta A3, Caixa 2..."></div>
     <div class="fi"><label>Foto do Modelo</label>
       <div id="foto-area" style="border:2px dashed var(--c3);border-radius:var(--rs);padding:10px;background:var(--c1);cursor:pointer" onclick="document.getElementById('mmod-file').click()" ondragover="event.preventDefault();this.style.borderColor='var(--g)'" ondragleave="this.style.borderColor='var(--c3)'" ondrop="handleFotoDrop(event)">
         <div id="foto-preview" style="display:none;position:relative;text-align:center;margin-bottom:8px">
@@ -1137,10 +1318,10 @@ tbody td{padding:8px 12px;font-size:13px;color:var(--c7);}
 <script>
 const SURL='https://sykyvlpcrpfbzngbkkng.supabase.co';
 const SKEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InN5a3l2bHBjcnBmYnpuZ2Jra25nIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzM5NjEzNTksImV4cCI6MjA4OTUzNzM1OX0.uDPSrhRyza0u7UO3JsDuA5D8Z-DuQyN5ywfRto1Od4I';
-const db=supabase.createClient(SURL,SKEY);
+// db definido pelo shim acima
 
 var U=null,pgCur='pedidos',filtPed='todos',filtAF='todos',filtSV='todos';
-var editAtivId=null,chartSt=null,photos={},selSkus=new Set();
+var editAtivId=null,chartSt=null,photos={},selSkus=new Map();
 var pedidos=[],atividades=[],colaboradores=[],prestadores=[],servicos=[];
 var tiposServ=[],etapas=[],usuarios=[],insumos=[],movs=[],custosFixos=[],folha=[],modelos=[];
 var equipamentos=[],usoEquip=[],catsExtras=[];
@@ -1193,8 +1374,9 @@ function recarregarDados(){
   var btn=document.getElementById('refreshbtn');
   if(btn){btn.textContent='⟳ Atualizando...';btn.disabled=true;}
   var t0=Date.now();
-  // Reset para forçar reload das fotos também
   fotosCarregadas=false;
+  // Limpar cache de fotos para pegar atualizações
+  try{localStorage.removeItem('veri_foto_cache');}catch(e){}
   init();
   // Aguarda o badge ficar verde para reportar tempo
   var check=setInterval(function(){
@@ -1221,7 +1403,7 @@ function init(){
     db.from('prestadores').select('*').eq('ativo',true).order('nome'),
     db.from('tipos_servico').select('*').order('nome'),
     db.from('etapas_producao').select('*').order('ordem'),
-    db.from('catalogo_modelos').select('id,codigo,descricao,peso_laton_g,qtd_borrachas,obs_molde,modelo_pedras(tipo_pedra,tamanho_mm,quantidade)').order('codigo')
+    db.from('catalogo_modelos').select('id,codigo,descricao,foto_url,peso_laton_g,qtd_borrachas,obs_molde,localizacao_borracha,modelo_pedras(tipo_pedra,tamanho_mm,quantidade)').order('codigo')
   ]).then(function(r1){
     if(r1[0].error){badge.textContent='✗ Erro';badge.className='connbadge';toast(r1[0].error.message,'err');return;}
     pedidos=r1[0].data||[];atividades=r1[1].data||[];colaboradores=r1[2].data||[];
@@ -1287,16 +1469,18 @@ function renderPagina(page){
 
 function buildSkuFotoMap(){
   skuFotoMap={};
-  // 1. Restaurar cache do localStorage (rápido, sem rede)
-  try{
-    var cached=localStorage.getItem('veri_foto_cache');
-    if(cached){
-      var fc=JSON.parse(cached);
-      Object.keys(fc).forEach(function(k){skuFotoMap[k]=fc[k];});
+  // Fotos já vêm na query principal — sem segunda chamada ao banco
+  modelos.forEach(function(m){
+    if(m.foto_url){
+      skuFotoMap[m.codigo]=m.foto_url;
     }
+  });
+  // Também salvar no cache local para páginas de tabela (pedidos, serviços)
+  try{
+    var cache={};
+    modelos.forEach(function(m){if(m.foto_url)cache[m.codigo]=m.foto_url;});
+    localStorage.setItem('veri_foto_cache',JSON.stringify(cache));
   }catch(e){}
-  // 2. Atualizar com fotos já nos modelos (se vieram da query completa)
-  modelos.forEach(function(m){if(m.foto_url)skuFotoMap[m.codigo]=m.foto_url;});
 }
 
 // Salvar foto no cache local após salvar modelo
@@ -1311,31 +1495,12 @@ function cacheFoto(codigo,url){
   }catch(e){}
 }
 
-// Carregar fotos completas (só chamado na página SKUs/Fotos)
+// Fotos já carregadas na query principal — função mantida por compatibilidade
 var fotosCarregadas=false;
 function carregarFotosCompletas(callback){
-  if(fotosCarregadas){if(callback)callback();return;}
-  var semFoto=modelos.filter(function(m){return !skuFotoMap[m.codigo];});
-  if(!semFoto.length){fotosCarregadas=true;if(callback)callback();return;}
-  db.from('catalogo_modelos').select('codigo,foto_url').then(function(r){
-    if(r.error)return;
-    var cache={};
-    try{var ex=localStorage.getItem('veri_foto_cache');if(ex)cache=JSON.parse(ex);}catch(e){}
-    (r.data||[]).forEach(function(m){
-      if(m.foto_url){
-        skuFotoMap[m.codigo]=m.foto_url;
-        cache[m.codigo]=m.foto_url;
-      }
-    });
-    // Atualizar modelos com foto_url
-    modelos.forEach(function(m){
-      var found=(r.data||[]).find(function(x){return x.codigo===m.codigo;});
-      if(found)m.foto_url=found.foto_url;
-    });
-    try{localStorage.setItem('veri_foto_cache',JSON.stringify(cache));}catch(e){}
-    fotosCarregadas=true;
-    if(callback)callback();
-  });
+  // Fotos já vêm na query principal do init(), sem necessidade de segunda chamada
+  fotosCarregadas=true;
+  if(callback)callback();
 }
 
 // PREÇOS DE SERVIÇO (localStorage para persistência local)
@@ -1434,33 +1599,131 @@ function renderFpMes(){
   var fpM=folha.filter(function(f){return f.competencia&&f.competencia.startsWith(mes);});
   var tb=document.getElementById('fpmes-tb');if(!tb)return;
   tb.innerHTML=fpM.map(function(f){
-    return '<tr><td>'+f.colaborador+'</td><td>'+R(f.salario_base)+'</td><td style="font-weight:700">'+R(f.total||f.salario_base)+'</td></tr>';
-  }).join('')+'<tr style="background:var(--gp)"><td colspan="2" style="text-align:right;font-weight:600">Total Folha</td><td style="font-weight:700;color:var(--g)">'+R(fpM.reduce(function(s,f){return s+parseFloat(f.total||f.salario_base);},0))+'</td></tr>';
+    return '<tr><td>'+f.colaborador+'</td><td>'+R(f.salario_base)+'</td><td style="font-weight:700">'+R(parseFloat(f.total||f.salario_base||0)*2.2)+'</td></tr>';
+  }).join('')+'<tr style="background:var(--gp)"><td colspan="2" style="text-align:right;font-weight:600">Total Folha (Sal. Real)</td><td style="font-weight:700;color:var(--g)">'+R(fpM.reduce(function(s,f){return s+parseFloat(f.salario_real||f.total||f.salario_base||0);},0))+'</td></tr>';
 }
 
-function loadPrecos(){try{var d=localStorage.getItem('veri_precos');precosServico=d?JSON.parse(d):[];}catch(e){precosServico=[];}}
-function savePrecos(){try{localStorage.setItem('veri_precos',JSON.stringify(precosServico));}catch(e){}}
-function getPrecoServico(tipo,prestadorId){var match=precosServico.filter(function(p){return p.tipo===tipo&&(p.prestador_id===prestadorId||!p.prestador_id);}).sort(function(a,b){return(b.data||'').localeCompare(a.data||'');});return match.length?match[0].valor:null;}
-function renderPrecos(){
-  loadPrecos();
-  var tb=document.getElementById('pretb');if(!tb)return;
-  if(!precosServico.length){tb.innerHTML='<tr><td colspan="6" style="padding:14px;text-align:center;color:var(--c4)">Nenhum preço cadastrado — clique em "+ Preço" para adicionar</td></tr>';return;}
-  var pnomes={};prestadores.forEach(function(p){pnomes[p.id]=p.nome;});
-  tb.innerHTML=precosServico.map(function(p,i){return '<tr><td><strong>'+p.tipo+'</strong></td><td>'+(p.prestador_id&&pnomes[p.prestador_id]?pnomes[p.prestador_id]:'<em style="color:var(--c4)">Padrão</em>')+'</td><td style="font-weight:700;color:var(--g)">'+R(p.valor)+'/pç</td><td style="color:var(--c5)">'+(p.data?p.data.split('-').reverse().join('/'):'—')+'</td><td style="color:var(--c5);font-size:12px">'+(p.obs||'—')+'</td><td><div class="ra"><button class="btn btng bxs" onclick="editPreco('+i+')">✏️</button><button class="btn btnd bxs" onclick="delPreco('+i+')">🗑️</button></div></td></tr>';}).join('');
+function loadPrecos(cb){
+  db.from('tabela_precos').select('*,prestadores(nome)').eq('ativo',true).order('tipo_servico').then(function(r){
+    precosServico=r.data||[];
+    if(cb)cb();
+    renderPrecos();
+  });
 }
-function openMPreco(){sv('mprc-t','Registrar Preço');sv('mprc-id','');sv('mprc-tip','');sv('mprc-val','');sv('mprc-data',new Date().toISOString().split('T')[0]);sv('mprc-obs','');sv('mprc-prs','');
-  var tipSel=document.getElementById('mprc-tip');if(tipSel)tipSel.innerHTML='<option value="">Selecione</option>'+tiposServ.map(function(t){return '<option>'+t.nome+'</option>';}).join('');
-  var prsSel=document.getElementById('mprc-prs');if(prsSel)prsSel.innerHTML='<option value="">Todos/Padrão</option>'+prestadores.map(function(p){return '<option value="'+p.id+'">'+p.nome+'</option>';}).join('');
+function savePrecos(){/* dados no banco — sem localStorage */}
+function getPrecoServico(tipo,prestadorId){
+  // Busca: 1º match exato tipo+prestador, 2º só tipo (padrão)
+  var exact=precosServico.find(function(p){return p.tipo_servico===tipo&&p.prestador_id===prestadorId;});
+  if(exact)return parseFloat(exact.valor_unitario||0);
+  var gen=precosServico.find(function(p){return p.tipo_servico===tipo&&!p.prestador_id;});
+  if(gen)return parseFloat(gen.valor_unitario||0);
+  return null;
+}
+var _cardsSel=new Set();
+function toggleSelCard(sku,on){
+  if(on)_cardsSel.add(sku);else _cardsSel.delete(sku);
+  var el=document.getElementById('rp-sel-cnt');if(el)el.textContent=_cardsSel.size;
+}
+function selecionarTodosCards(on){
+  document.querySelectorAll('[id^="chk-"]').forEach(function(chk){
+    chk.checked=on;
+    var sku=chk.id.replace('chk-','');
+    if(on)_cardsSel.add(sku);else _cardsSel.delete(sku);
+  });
+  var el=document.getElementById('rp-sel-cnt');if(el)el.textContent=_cardsSel.size;
+}
+function imprimirCardsSelecionados(){
+  if(!_cardsSel.size){toast('Selecione ao menos um card.','err');return;}
+  var win=window.open('','_blank');
+  var cards=[];
+  _cardsSel.forEach(function(sku){
+    var el=document.getElementById('rp-card-'+sku);
+    if(el)cards.push(el.outerHTML);
+  });
+  win.document.write('<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Rateio — Fundição Veri</title>'
+    +'<style>body{font-family:DM Sans,system-ui,sans-serif;padding:16px;background:#fff}'
+    +'.rp-card{break-inside:avoid;margin-bottom:20px;border:1px solid #e5e7eb;border-radius:10px;overflow:hidden}'
+    +'@media print{.rp-card{break-inside:avoid}}</style></head><body>'
+    +cards.join('')+'</body></html>');
+  win.document.close();
+  setTimeout(function(){win.print();},400);
+}
+function renderPrecos(){
+  var tb=document.getElementById('pretb');if(!tb)return;
+  if(!precosServico.length){tb.innerHTML='<tr><td colspan="7" style="padding:14px;text-align:center;color:var(--c4)">Nenhum preço cadastrado — clique em "+ Preço" para adicionar</td></tr>';return;}
+  tb.innerHTML=precosServico.map(function(p){
+    var pNome=p.prestadores?p.prestadores.nome:(p.prestador_nome||'<em style="color:var(--c4)">Padrão</em>');
+    var vig=p.vigente_desde?'Desde '+p.vigente_desde.slice(0,10).split('-').reverse().join('/'):'—';
+    return '<tr>'
+      +'<td><strong>'+p.tipo_servico+'</strong></td>'
+      +'<td>'+pNome+'</td>'
+      +'<td style="font-weight:700;color:var(--g)">'+R(p.valor_unitario)+'</td>'
+      +'<td style="font-size:11px;color:var(--c5)">'+(p.unidade||'peça')+'</td>'
+      +'<td style="font-size:11px;color:var(--c5)">'+vig+'</td>'
+      +'<td style="font-size:11px;color:var(--c5)">'+(p.observacao||'—')+'</td>'
+      +'<td><div class="ra">'
+        +'<button class="btn btsm btns" onclick="editPreco(this.dataset.eid)" data-eid="'+p.id+'">✏️</button>'
+        +'<button class="btn btsm btnd" onclick="delPreco(this.dataset.did)" data-did="'+p.id+'">🗑️</button>'
+      +'</div></td>'
+      +'</tr>';
+  }).join('')||'<tr><td colspan="7" style="padding:12px;text-align:center;color:var(--c4)">Sem preços</td></tr>';
+}
+
+function openMPreco(){
+  sv('mpr-id','');sv('mpr-tip','');sv('mpr-val','');
+  sv('mpr-vig',new Date().toISOString().split('T')[0]);
+  sv('mpr-obs','');sv('mpr-un','peca');
+  // Popular selects
+  var tipSel=document.getElementById('mpr-tip');
+  if(tipSel)tipSel.innerHTML='<option value="">Selecione</option>'+tiposServ.map(function(t){return '<option>'+t.nome+'</option>';}).join('');
+  var prsSel=document.getElementById('mpr-prs');
+  if(prsSel)prsSel.innerHTML='<option value="">Padrão (todos)</option>'+prestadores.map(function(p){return '<option value="'+p.id+'">'+p.nome+'</option>';}).join('');
   openM('m-preco');
 }
-function editPreco(i){loadPrecos();var p=precosServico[i];if(!p)return;sv('mprc-id',String(i));sv('mprc-tip',p.tipo);sv('mprc-val',p.valor);sv('mprc-data',p.data||'');sv('mprc-obs',p.obs||'');sv('mprc-prs',p.prestador_id||'');
+function editPreco(i){loadPrecos(function(){renderRateio();});var p=precosServico[i];if(!p)return;sv('mprc-id',String(i));sv('mprc-tip',p.tipo);sv('mprc-val',p.valor);sv('mprc-data',p.data||'');sv('mprc-obs',p.obs||'');sv('mprc-prs',p.prestador_id||'');
   var tipSel=document.getElementById('mprc-tip');if(tipSel)tipSel.innerHTML='<option value="">Selecione</option>'+tiposServ.map(function(t){return '<option>'+t.nome+'</option>';}).join('');
   var prsSel=document.getElementById('mprc-prs');if(prsSel)prsSel.innerHTML='<option value="">Todos/Padrão</option>'+prestadores.map(function(p){return '<option value="'+p.id+'">'+p.nome+'</option>';}).join('');
   sv('mprc-tip',p.tipo);sv('mprc-prs',p.prestador_id||'');
   openM('m-preco');
 }
-function salvarPreco(){var tipo=v('mprc-tip');var val=parseFloat(v('mprc-val'));if(!tipo||!val){toast('Tipo e valor são obrigatórios.','err');return;}loadPrecos();var idx=v('mprc-id');var entry={tipo:tipo,valor:val,prestador_id:v('mprc-prs')||null,data:v('mprc-data')||null,obs:v('mprc-obs')||null};if(idx!=='')precosServico[parseInt(idx)]=entry;else precosServico.push(entry);savePrecos();closeM('m-preco');renderPrecos();renderFinanceiro();toast('Preço salvo!');}
-function delPreco(i){cfm('Excluir preço','Permanente.',function(){loadPrecos();precosServico.splice(i,1);savePrecos();renderPrecos();renderFinanceiro();toast('Excluído!');});}
+function salvarPreco(){
+  var tipo=v('mpr-tip');var val=parseFloat(v('mpr-val'))||0;
+  if(!tipo||!val){toast('Preencha tipo e valor.','err');return;}
+  var prsId=v('mpr-prs')||null;
+  var prsNome=prsId?(prestadores.find(function(p){return p.id===prsId;})||{}).nome:'';
+  var editId=v('mpr-id')||null;
+  var payload={tipo_servico:tipo,prestador_id:prsId||null,prestador_nome:prsNome||null,
+    valor_unitario:val,unidade:v('mpr-un')||'peca',
+    vigente_desde:v('mpr-vig')||new Date().toISOString().slice(0,10),
+    observacao:v('mpr-obs')||null,ativo:true};
+  (editId
+    ?db.from('tabela_precos').update(payload).eq('id',editId)
+    :db.from('tabela_precos').insert([payload])
+  ).then(function(r){
+    if(r.error){toast('Erro: '+r.error.message,'err');return;}
+    toast(editId?'Preço atualizado!':'Preço cadastrado!');closeM('m-preco');
+    sv('mpr-id','');loadPrecos();
+  });
+}
+
+function delPreco(id){
+  if(!confirm('Remover este preço?'))return;
+  db.from('tabela_precos').update({ativo:false}).eq('id',id).then(function(r){
+    if(r.error){toast('Erro','err');return;}
+    toast('Preço removido!');loadPrecos();
+  });
+}
+function editPreco(id){
+  var p=precosServico.find(function(x){return x.id===id;});if(!p)return;
+  sv('mpr-id',id);sv('mpr-obs',p.observacao||'');sv('mpr-un',p.unidade||'peca');
+  sv('mpr-vig',p.vigente_desde?p.vigente_desde.slice(0,10):'');sv('mpr-val',p.valor_unitario);
+  // Popular selects antes de setar valor
+  var tipSel=document.getElementById('mpr-tip');
+  if(tipSel){tipSel.innerHTML='<option value="">Selecione</option>'+tiposServ.map(function(t){return '<option'+(t.nome===p.tipo_servico?' selected':'')+'>'+t.nome+'</option>';}).join('');}
+  var prsSel=document.getElementById('mpr-prs');
+  if(prsSel){prsSel.innerHTML='<option value="">Padrão (todos)</option>'+prestadores.map(function(pr){return '<option value="'+pr.id+'"'+(pr.id===p.prestador_id?' selected':'')+'>'+pr.nome+'</option>';}).join('');}
+  openM('m-preco');
+}
 
 function skuCell(sku){
   var foto=skuFotoMap[sku];
@@ -1495,8 +1758,8 @@ function populateSels(){
 function renderAll(){renderPagina(pgCur);}
 
 // NAV
-var TITLES={pedidos:'Controle de Pedidos',atividades:'Atividades Diárias',ordens:'Ordens de Produção',colaboradores:'Colaboradores',prestadores:'Prestadores',tipos:'Tipos de Serviço',etapas:'Etapas de Produção',usuarios:'Usuários',servicos:'Serviços Externos',financeiro:'Custos e Rateio',folha:'Folha de Pagamento',estoque:'Estoque de Insumos',catalogo:'SKUs (Fotos)',equipamentos:'Equipamentos e Ferramentas',relatorio:'Relatório Gerencial',dashboard:'Dashboard',bd:'Banco de Dados',lixeira:'Lixeira — Itens Excluídos'};
-var ADDS={pedidos:'+ Novo Pedido',atividades:'+ Registrar',ordens:'🖨️ Imprimir',colaboradores:'+ Colaborador',prestadores:'+ Prestador',tipos:'+ Tipo',etapas:'+ Etapa',usuarios:'+ Usuário',servicos:'+ Registrar',financeiro:'+ Custo Fixo',folha:'+ Pagamento',estoque:'+ Insumo',catalogo:'+ Modelo',equipamentos:'+ Equipamento',relatorio:'↓ Exportar',dashboard:'↓ Exportar',bd:'',lixeira:'🗑️ Esvaziar Lixeira'};
+var TITLES={pedidos:'Controle de Pedidos',atividades:'Atividades Diárias',ordens:'Ordens de Produção',colaboradores:'Colaboradores',prestadores:'Prestadores',tipos:'Tipos de Serviço',etapas:'Etapas de Produção',usuarios:'Usuários',servicos:'Serviços Externos',financeiro:'Custos e Rateio',folha:'Folha de Pagamento',estoque:'Estoque de Insumos',catalogo:'SKUs (Fotos)',equipamentos:'Equipamentos e Ferramentas',relatorio:'Relatório Gerencial',dashboard:'Dashboard',bd:'Banco de Dados',lixeira:'Lixeira — Itens Excluídos','catalogo':'Catálogo de SKUs','equipamentos':'Equipamentos'};
+var ADDS={pedidos:'+ Novo Pedido',atividades:'+ Registrar',ordens:'🖨️ Imprimir',colaboradores:'+ Colaborador',prestadores:'+ Prestador',tipos:'+ Tipo',etapas:'+ Etapa',usuarios:'+ Usuário',servicos:'+ Registrar',financeiro:'+ Custo Fixo',folha:'+ Pagamento',estoque:'+ Insumo',catalogo:'+ Modelo',equipamentos:'+ Equipamento',relatorio:'↓ Exportar',dashboard:'↓ Exportar',bd:'',lixeira:'🗑️ Esvaziar Lixeira','catalogo':'+ Modelo','equipamentos':'+ Equipamento'};
 function go(el,page){
   document.querySelectorAll('.page').forEach(function(p){p.classList.remove('on');});
   document.querySelectorAll('.ni').forEach(function(n){n.classList.remove('on');});
@@ -1565,9 +1828,14 @@ function renderPedidos(){
   var fp=pedidos.filter(function(p){
     var matchF=filtPed==='todos'||p.status===filtPed||(filtPed==='urgente'&&p.urgente);
     var matchS=!s||p.sku.toLowerCase().includes(s)||(p.pedidos&&p.pedidos.solicitante||'').toLowerCase().includes(s);
-    return matchF&&matchS;
+    var etFilt=document.getElementById('petapa')?document.getElementById('petapa').value:'';
+    var matchE=!etFilt||p.etapa_atual===etFilt;
+    return matchF&&matchS&&matchE;
   });
   var cy=pedidos.filter(function(x){return x.yield_pct>0;});
+  // Preencher select de etapas
+  var petEl=document.getElementById('petapa');
+  if(petEl&&petEl.options.length<=1){var ets=[...new Set(pedidos.map(function(x){return x.etapa_atual;}).filter(Boolean))].sort();ets.forEach(function(e){var o=document.createElement('option');o.value=e;o.textContent=e;petEl.appendChild(o);});}
   document.getElementById('pk-tot').textContent=pedidos.length;
   document.getElementById('pk-atr').textContent=pedidos.filter(function(x){return x.status==='Atrasado';}).length;
   document.getElementById('pk-pcs').textContent=pedidos.reduce(function(s,x){return s+x.qtd_solicitada;},0).toLocaleString('pt-BR');
@@ -1613,8 +1881,30 @@ function renderPedidos(){
       +'<td>'+entCell+'</td>'
       +'<td>'+epill(p.etapa_atual)+'</td>'
       +'<td>'+sbadge(p.status)+'</td>'
-      +'<td>'+(p.atraso_dias>0?'<span style="font-size:11px;font-weight:600;color:var(--r);background:var(--rl);padding:2px 6px;border-radius:4px">⚠ '+p.atraso_dias+'d</span>':'—')+'</td>'
-      +'<td>'+ybar(p.yield_pct||0)+'</td>'
+      +'<td>'+(function(){
+        // Atraso = dias APÓS a data de entrega prevista (não desde o pedido)
+        if(p.status==='Concluído')return'<span style="font-size:11px;color:var(--c4)">—</span>';
+        var de=p.pedidos&&p.pedidos.data_entrega;
+        if(!de)return'<span style="font-size:11px;color:var(--c4)">—</span>';
+        var hoje=new Date();hoje.setHours(0,0,0,0);
+        var entDt=new Date(de+'T00:00:00');
+        var diff=Math.floor((hoje-entDt)/(1000*60*60*24));
+        // diff > 0: passou da data de entrega = ATRASADO
+        if(diff>0)return'<span style="font-size:11px;font-weight:600;color:var(--r);background:var(--rl);padding:2px 6px;border-radius:4px">⚠ '+diff+'d</span>';
+        // diff entre -3 e 0: faltam até 3 dias = ALERTA
+        if(diff>=-3)return'<span style="font-size:11px;font-weight:600;color:var(--a);background:var(--al);padding:2px 6px;border-radius:4px">'+Math.abs(diff)+'d</span>';
+        // diff < -3: dentro do prazo = sem atraso
+        return'<span style="font-size:11px;color:var(--c4)">—</span>';
+      }())+'</td>'
+      +'<td>'+(function(){
+        // Yield: calculado das atividades finalizadas deste SKU
+        var atSku=atividades.filter(function(a){return a.sku===p.sku&&a.finalizado&&(a.qtd_conforme||0)+(a.qtd_perdas||0)>0;});
+        if(!atSku.length)return ybar(p.yield_pct||0);
+        var totConf=atSku.reduce(function(s,a){return s+(a.qtd_conforme||0);},0);
+        var totPerd=atSku.reduce(function(s,a){return s+(a.qtd_perdas||0);},0);
+        var yld=totConf+totPerd>0?Math.round(totConf/(totConf+totPerd)*100):0;
+        return ybar(yld);
+      }())+'</td>'
       +'<td style="color:var(--c5)">'+fd(p.pedidos&&p.pedidos.data_entrega)+'</td>'
       +'<td><div class="ra"><button class="btn btng bxs" onclick="editItem(\''+p.id+'\')">✏️</button><button class="btn btnd bxs" onclick="delItem(\''+p.id+'\',\''+p.sku+'\')">🗑️</button></div></td>'
       +'</tr>';
@@ -1622,12 +1912,12 @@ function renderPedidos(){
 }
 function setPF(el,val){filtPed=val;document.querySelectorAll('[onclick^="setPF"]').forEach(function(b){b.classList.remove('on');});el.classList.add('on');renderPedidos();}
 function openMPed(){sv('mped-t','Novo Pedido');sv('mped-id','');['mped-num','mped-sol','mped-dat','mped-ent','mped-obs'].forEach(function(id){sv(id,'');});document.getElementById('skurows').innerHTML='';addSkuRow();openM('m-pedido');}
-function addSkuRow(sku,qtd,custo){var row=document.createElement('div');row.className='sku-row';row.innerHTML='<input type="text" placeholder="SKU" value="'+(sku||'')+'" oninput="this.value=this.value.toUpperCase()"><input type="number" placeholder="Qtd" value="'+(qtd||'')+'" min="1"><input type="number" placeholder="0.00" value="'+(custo||'')+'" min="0" step="0.0001"><button class="dsk" onclick="this.parentElement.remove()">×</button>';document.getElementById('skurows').appendChild(row);}
+function addSkuRow(sku,qtd){var row=document.createElement('div');row.className='sku-row';row.innerHTML='<input type="text" placeholder="SKU" value="'+(sku||'')+'" oninput="this.value=this.value.toUpperCase()"><input type="number" placeholder="Qtd" value="'+(qtd||'')+'" min="1"><button class="dsk" onclick="this.parentElement.remove()">×</button>';document.getElementById('skurows').appendChild(row);}
 function salvarPedido(){
   var num=parseInt(v('mped-num'));var sol=(v('mped-sol')||'').trim();var dat=v('mped-dat');var ent=v('mped-ent');
   if(!num||!sol||!dat||!ent){toast('Preencha todos os campos obrigatórios.','err');return;}
   var skuEls=[].slice.call(document.getElementById('skurows').children);
-  var skus=skuEls.map(function(r){var ins=r.querySelectorAll('input');return{sku:ins[0].value.trim(),qtd:parseInt(ins[1].value)||0,custo:parseFloat(ins[2].value)||0};}).filter(function(s){return s.sku&&s.qtd>0;});
+  var skus=skuEls.map(function(r){var ins=r.querySelectorAll('input');return{sku:ins[0].value.trim(),qtd:parseInt(ins[1].value)||0,custo:0};}).filter(function(s){return s.sku&&s.qtd>0;});
   if(!skus.length){toast('Adicione pelo menos 1 SKU com quantidade.','err');return;}
   var etN=etapas.filter(function(e){return e.ativo;});
   db.from('pedidos').upsert({numero:num,solicitante:sol,data_pedido:dat,data_entrega:ent,ref_key:num+'_'+sol,observacao:v('mped-obs')},{onConflict:'ref_key'}).select().single().then(function(r1){
@@ -1645,6 +1935,13 @@ function editItem(id){
   sv('mit-eta',p.etapa_atual);sv('mit-sta',p.status);sv('mit-atr',p.atraso_dias||0);
   sv('mit-cst',p.custo_peca||0);sv('mit-yld',p.yield_pct||0);
   sv('mit-urg-obs',p.obs_urgencia||'');
+  var dpRaw=p.pedidos&&p.pedidos.data_pedido;sv('mit-dat-ped',dpRaw?new Date(dpRaw).toLocaleDateString('pt-BR'):'—');
+  // Preencher data de entrega prevista como padrão para nova entrega
+  sv('mit-ent-data', new Date().toISOString().split('T')[0]);
+  sv('mit-ent-obs','');
+  sv('mit-ent',0);
+  // Carregar histórico de entregas parciais
+  carregarEntregasHist(id, p.qtd_solicitada);
   var urgTgt=document.getElementById('mit-urg-tgt');
   var urgWrap=document.getElementById('mit-urg-wrap');
   if(urgTgt){urgTgt.classList.toggle('on',!!p.urgente);}
@@ -1663,8 +1960,10 @@ function tglUrgente(){
 }
 function calcEntregaPct(){
   var sol=parseInt(v('mit-qtd'))||0;
-  var ent=parseInt(v('mit-ent'))||0;
-  var pct=sol>0?Math.round(ent/sol*100):0;
+  var totalAcum=parseInt(v('mit-ent-total'))||0;
+  var nova=parseInt(v('mit-ent'))||0;
+  var totalComNova=totalAcum+nova;
+  var pct=sol>0?Math.round(totalComNova/sol*100):0;
   var el=document.getElementById('mit-ent-pct');
   if(el){
     el.textContent=pct+'%'+(pct>100?' ⚡':'');
@@ -1675,22 +1974,130 @@ function calcEntregaPct(){
 function salvarItem(){
   var id=v('mit-id');
   var urgOn=document.getElementById('mit-urg-tgt')&&document.getElementById('mit-urg-tgt').classList.contains('on');
+  var novaQtd=parseInt(v('mit-ent'))||0;
+  var dataEnt=v('mit-ent-data');
+  var obsEnt=v('mit-ent-obs')||null;
+  // Buscar total acumulado atual de entregas
+  var totalEntAtual=parseInt(v('mit-ent-total'))||0;
+  var totalEntNovo=totalEntAtual+(novaQtd>0?novaQtd:0);
+  var qtdSol=parseInt(v('mit-qtd'))||0;
+  var urgOn2=urgOn;
+
+  // Salvar item com total acumulado de entregas
   db.from('itens_pedido').update({
     sku:v('mit-sku'),
-    qtd_solicitada:parseInt(v('mit-qtd'))||0,
-    qtd_entregue:parseInt(v('mit-ent'))||0,
+    qtd_solicitada:qtdSol,
+    qtd_entregue:totalEntNovo,
     etapa_atual:v('mit-eta'),
     status:v('mit-sta'),
-    atraso_dias:parseInt(v('mit-atr'))||0,
+    atraso_dias:(function(){
+      // Buscar data_entrega do pedido para calcular atraso correto
+      var itemAtual=pedidos.find(function(x){return x.id===v('mit-id');});
+      var deStr=itemAtual&&itemAtual.pedidos&&itemAtual.pedidos.data_entrega;
+      if(deStr){
+        var partes=deStr.split('-');
+        if(partes.length===3){
+          var dEnt=new Date(deStr+'T00:00:00');
+          var hoje=new Date();hoje.setHours(0,0,0,0);
+          var diff=Math.floor((hoje-dEnt)/(1000*60*60*24));
+          return diff>0?diff:0;
+        }
+      }
+      return 0;
+    }()),
     custo_peca:parseFloat(v('mit-cst'))||0,
     yield_pct:parseFloat(v('mit-yld'))||0,
-    urgente:urgOn,
-    obs_urgencia:urgOn?(v('mit-urg-obs')||null):null
+    urgente:urgOn2,
+    obs_urgencia:urgOn2?(v('mit-urg-obs')||null):null
   }).eq('id',id).then(function(r){
     if(r.error){toast('Erro: '+r.error.message,'err');return;}
-    toast('Item atualizado!');closeM('m-item');init();
+    // Se informou nova entrega, salvar na tabela de entregas parciais
+    if(novaQtd>0&&dataEnt){
+      // Descobrir número da próxima entrega
+      db.from('entregas_parciais').select('numero_entrega').eq('item_pedido_id',id).order('numero_entrega',{ascending:false}).limit(1).then(function(re){
+        var proxNum=(re.data&&re.data.length>0?(re.data[0].numero_entrega+1):1);
+        db.from('entregas_parciais').insert([{
+          item_pedido_id:id,
+          numero_entrega:proxNum,
+          qtd_entregue:novaQtd,
+          data_entrega:dataEnt,
+          observacao:obsEnt
+        }]).then(function(){toast('Entrega #'+proxNum+' registrada!');closeM('m-item');init();});
+      });
+    } else {
+      toast('Item atualizado!');closeM('m-item');init();
+    }
   });
 }
+function calcAtrasoAuto(dataEntregaStr){
+  // Calcula atraso em dias APÓS a data de entrega prevista
+  // Só conta dias depois do prazo — dias antes = 0 (não há atraso)
+  if(!dataEntregaStr||dataEntregaStr==='—')return 0;
+  try{
+    var partes=dataEntregaStr.split('/');
+    if(partes.length!==3)return 0;
+    var dEntrega=new Date(partes[2]+'-'+partes[1]+'-'+partes[0]);
+    var hoje=new Date();hoje.setHours(0,0,0,0);
+    var diff=Math.floor((hoje-dEntrega)/(1000*60*60*24));
+    return diff>0?diff:0; // só retorna se passou da data de entrega
+  }catch(e){return 0;}
+}
+
+function carregarEntregasHist(itemId, qtdSolicitada){
+  var hist=document.getElementById('mit-entregas-hist');
+  if(!hist)return;
+  hist.innerHTML='<div style="font-size:11px;color:var(--c4)">Carregando...</div>';
+  db.from('entregas_parciais').select('*').eq('item_pedido_id',itemId).order('numero_entrega').then(function(r){
+    var entregas=r.data||[];
+    var totalAcum=entregas.reduce(function(s,e){return s+(e.qtd_entregue||0);},0);
+    sv('mit-ent-total', totalAcum);
+    // Atualizar % entregue
+    var pctAcum=qtdSolicitada>0?Math.round(totalAcum/qtdSolicitada*100):0;
+    var pctEl=document.getElementById('mit-ent-pct');
+    if(pctEl){pctEl.textContent=pctAcum+'%';pctEl.style.color=pctAcum>=100?'var(--g)':pctAcum>=50?'var(--a)':'var(--b)';}
+    if(!entregas.length){
+      hist.innerHTML='<div style="font-size:11px;color:var(--c4);font-style:italic">Nenhuma entrega registrada ainda</div>';
+      return;
+    }
+    hist.innerHTML=entregas.map(function(e){
+      var pct=qtdSolicitada>0?Math.round(e.qtd_entregue/qtdSolicitada*100):0;
+      var dt=e.data_entrega?e.data_entrega.split('-').reverse().join('/'):'—';
+      return '<div style="display:flex;align-items:center;gap:8px;background:#fff;border-radius:var(--rs);padding:6px 9px;border:1px solid var(--gl)">'
+        +'<span style="font-size:10px;font-weight:700;color:#fff;background:var(--g);padding:2px 6px;border-radius:3px">'+e.numero_entrega+'ª</span>'
+        +'<div style="flex:1">'
+          +'<div style="font-size:12.5px;font-weight:600;color:var(--gd)">'+e.qtd_entregue.toLocaleString('pt-BR')+' peças</div>'
+          +'<div style="font-size:10.5px;color:var(--c5)">📅 '+dt+(e.observacao?' · '+e.observacao:'')+'</div>'
+        +'</div>'
+        +'<span style="font-size:11px;font-weight:700;color:var(--g);background:var(--gl);padding:2px 7px;border-radius:20px">'+pct+'%</span>'
+        +'<button data-eid="'+e.id+'" data-iid="'+itemId+'" data-sol="'+qtdSolicitada+'" onclick="delEntregaBtn(this)" style="background:none;border:none;cursor:pointer;color:var(--c4);font-size:13px;padding:0" title="Remover entrega">×</button>'
+        +'</div>';
+    }).join('');
+  });
+}
+
+function delEntregaBtn(btn){
+  var eid=btn.getAttribute('data-eid');
+  var iid=btn.getAttribute('data-iid');
+  var sol=parseInt(btn.getAttribute('data-sol'))||0;
+  delEntrega(eid,iid,sol);
+}
+function delEntrega(entregaId, itemId, qtdSol){
+  if(!confirm('Remover esta entrega?'))return;
+  db.from('entregas_parciais').delete().eq('id',entregaId).then(function(){
+    // Recalcular total e atualizar item
+    db.from('entregas_parciais').select('qtd_entregue').eq('item_pedido_id',itemId).then(function(r){
+      var novoTotal=(r.data||[]).reduce(function(s,e){return s+(e.qtd_entregue||0);},0);
+      db.from('itens_pedido').update({qtd_entregue:novoTotal}).eq('id',itemId).then(function(){
+        carregarEntregasHist(itemId,qtdSol);
+        sv('mit-ent-total',novoTotal);
+        toast('Entrega removida!');
+        // Recarregar pedidos em background
+        db.from('itens_pedido').select('*,pedidos(id,numero,solicitante,data_pedido,data_entrega)').eq('ativo',true).then(function(r2){if(!r2.error)pedidos=r2.data||[];renderPedidos();});
+      });
+    });
+  });
+}
+
 function delItem(id,sku){cfm('Mover para Lixeira','Excluir '+sku+'? Poderá ser restaurado na Lixeira.',function(){db.from('itens_pedido').update({ativo:false,deletado_em:new Date().toISOString()}).eq('id',id).then(function(r){if(r.error){toast('Erro: '+r.error.message,'err');return;}toast('Item movido para a lixeira 🗑️');pedidos=pedidos.filter(function(p){return p.id!==id;});renderPedidos();});});}
 
 // ATIVIDADES
@@ -1754,14 +2161,28 @@ function renderSkus(){
   document.getElementById('oskuList').innerHTML=data.map(function(p){
     var on=selSkus.has(p.sku);
     var urg=p.urgente?'<span style="font-size:9px;background:#FEE2E2;color:#991B1B;padding:1px 4px;border-radius:3px;margin-left:2px">🚨</span>':'';
-    return '<div style="display:flex;align-items:center;gap:6px;padding:6px 8px;border-radius:var(--rs);border:1px solid '+(on?'var(--g)':'var(--c2)')+';background:'+(on?'var(--gp)':'#fff')+';cursor:pointer" onclick="tglSku(\''+p.sku+'\')">'
+    var skuDat=on?(selSkus.get(p.sku)||{qtd:0,custo:0}):{qtd:0,custo:0};
+    var qtdSku=skuDat.qtd||0;
+    var custoSku=skuDat.custo||0;
+    return '<div style="border:1px solid '+(on?'var(--g)':'var(--c2)')+';border-radius:var(--rs);background:'+(on?'var(--gp)':'#fff')+';margin-bottom:2px">'
+      +'<div style="display:flex;align-items:center;gap:6px;padding:6px 8px;cursor:pointer" onclick="tglSku(\''+p.sku+'\')">'
       +'<div style="width:12px;height:12px;border-radius:2px;border:1.5px solid '+(on?'var(--g)':'var(--c3)')+';background:'+(on?'var(--g)':'transparent')+';display:flex;align-items:center;justify-content:center;font-size:8px;color:#fff;flex-shrink:0">'+(on?'✓':'')+'</div>'
       +skuCell(p.sku)+urg
-      +'<span style="font-size:11px;color:var(--c5);margin-left:auto">'+p.qtd_solicitada.toLocaleString()+'</span>'
+      +'<span style="font-size:11px;color:var(--c5);margin-left:auto">'+p.qtd_solicitada.toLocaleString()+' solic.</span>'
       +'<span style="font-size:10px;color:var(--c4)">#'+(p.pedidos&&p.pedidos.numero||'?')+'</span>'
-      +'</div>';
+      +'</div>'
+      +(on?'<div style="padding:4px 8px 7px;border-top:1px dashed var(--gl);display:flex;align-items:center;gap:5px">'
+        +'<label style="font-size:10px;color:var(--gd);font-weight:600">Qtd:</label>'
+        +'<input type="number" min="0" placeholder="'+(p.qtd_solicitada)+'" value="'+(qtdSku||'')+'"'
+        +' style="width:70px;padding:3px 6px;border:1px solid var(--g);border-radius:3px;font-size:12px;font-family:var(--fn);outline:none"'
+        +' onclick="event.stopPropagation()" oninput="setSkuVal(\''+p.sku+'\',\'qtd\',this.value)">'
+        +'<label style="font-size:10px;color:var(--gd);font-weight:600;margin-left:4px">R$/un:</label>'
+        +'<input type="number" min="0" step="0.001" placeholder="0.00" value="'+(custoSku||'')+'"'
+        +' style="width:70px;padding:3px 6px;border:1px solid var(--g);border-radius:3px;font-size:12px;font-family:var(--fn);outline:none"'
+        +' onclick="event.stopPropagation()" oninput="setSkuVal(\''+p.sku+'\',\'custo\',this.value)">'
+        +'</div>':'')
   }).join('');
-  document.getElementById('osel').textContent=selSkus.size;
+  document.getElementById('osel').textContent=selSkus.size+' SKU'+(selSkus.size!==1?'s':'');
   gerarOP();
   // populate op-tipo and op-prs selects
   var ts=document.getElementById('op-tipo');
@@ -1795,65 +2216,60 @@ function opTipoChange(){
 
 // Popula o select de Tipo de Pedra com as pedras dos SKUs selecionados
 function popularPedrasSelect(){
-  var sel=document.getElementById('op-tipo-pedra');
   var infoDiv=document.getElementById('op-pedras-info');
-  if(!sel)return;
-  // Coletar todas as pedras dos modelos dos SKUs selecionados
-  var todasPedras=[];
-  var resumoPedras={};
+  var resumoDiv=document.getElementById('op-pedras-resumo');
+  if(!infoDiv)return;
+
+  // Coletar pedras de todos os SKUs selecionados via catálogo
+  var totalPedrasGeral=0;
+  var linhas=[];
+  var todasPedras={};
+
   selSkus.forEach(function(sku){
     var modelo=modelos.find(function(m){return m.codigo===sku;});
     var pedras=modelo&&modelo.modelo_pedras||[];
+    var qtdPecas=parseInt(document.getElementById('op-qen')&&document.getElementById('op-qen').value)||0;
+    // Usa a quantidade digitada manualmente no campo "Qtd. Peças Enviadas"
+    if(!pedras.length){
+      linhas.push('<div style="font-size:11px;padding:4px 6px;background:#FEF3C7;border-radius:4px;color:#92400E">⚠️ <strong>'+sku+'</strong> — sem pedras no catálogo</div>');
+      return;
+    }
+    var pedrasPorPeca=pedras.reduce(function(s,p){return s+(p.quantidade||1);},0);
+    var totalPedrasSku=qtdPecas*pedrasPorPeca;
+    totalPedrasGeral+=totalPedrasSku;
+    var descPedras=pedras.map(function(p){return p.tipo_pedra+(p.tamanho_mm?' '+p.tamanho_mm+'mm':'')+' ×'+p.quantidade;}).join(', ');
+    linhas.push('<div style="font-size:11px;padding:4px 6px;background:rgba(255,255,255,.7);border-radius:4px">'
+      +'<strong style="color:#1D4ED8">'+sku+'</strong>'
+      +' · '+qtdPecas.toLocaleString('pt-BR')+' pçs × '+pedrasPorPeca+' ped/pç'
+      +' = <strong>'+totalPedrasSku.toLocaleString('pt-BR')+' pedras</strong>'
+      +'<div style="color:#6B7280;font-size:10px">'+descPedras+'</div>'
+      +'</div>');
     pedras.forEach(function(p){
       var label=p.tipo_pedra+(p.tamanho_mm?' '+p.tamanho_mm+'mm':'');
-      if(!resumoPedras[label])resumoPedras[label]={label:label,qtdPorPeca:p.quantidade||1,skus:[]};
-      resumoPedras[label].skus.push(sku);
-      if(!todasPedras.includes(label))todasPedras.push(label);
+      if(!todasPedras[label])todasPedras[label]=0;
+      todasPedras[label]+=qtdPecas*(p.quantidade||1);
     });
   });
-  // Preencher select
-  var prevVal=v('op-tipo-pedra');
-  sel.innerHTML='<option value="">Selecione uma pedra...</option>';
-  todasPedras.forEach(function(label){
-    var opt=document.createElement('option');
-    opt.value=label;opt.textContent=label+' ('+resumoPedras[label].qtdPorPeca+' p/peça)';
-    sel.appendChild(opt);
-  });
-  // Opção para texto livre
-  var optCustom=document.createElement('option');
-  optCustom.value='__custom__';optCustom.textContent='✏️ Digitar manualmente...';
-  sel.appendChild(optCustom);
-  if(prevVal&&todasPedras.includes(prevVal))sel.value=prevVal;
-  // Ao escolher "digitar manualmente", focar no input custom
-  sel.onchange=function(){
-    var customWrap=document.getElementById('op-tipo-pedra-custom');
-    if(customWrap)customWrap.style.display=sel.value==='__custom__'?'block':'none';
-    // Auto-preencher qtd pedras por peça se selecionar uma pedra conhecida
-    if(sel.value&&sel.value!=='__custom__'&&resumoPedras[sel.value]){
-      var qtdPorPeca=resumoPedras[sel.value].qtdPorPeca;
-      sv('op-pedras-peca',qtdPorPeca);
-      // Auto-sugerir quantidade total de pedras = qtd selecionada de peças × pedras/peça
-      var totalPecas=0;
-      selSkus.forEach(function(sku){
-        var itensSku=pedidos.filter(function(p){return p.sku===sku;});
-        itensSku.forEach(function(p){totalPecas+=p.qtd_solicitada;});
-      });
-      if(totalPecas>0&&!v('op-pedras')){sv('op-pedras',totalPecas*qtdPorPeca);}
-      calcOpTotal();
-    }
-  };
-  // Info visual das pedras encontradas
-  if(infoDiv){
-    if(todasPedras.length){
-      infoDiv.innerHTML='<div style="font-size:10px;font-weight:600;color:var(--b);margin-bottom:3px;width:100%">Pedras dos SKUs selecionados:</div>'+
-        todasPedras.map(function(label){
-          var info=resumoPedras[label];
-          return '<span style="background:var(--bl);color:var(--b);font-size:10.5px;padding:2px 7px;border-radius:4px">'+label+' ×'+info.qtdPorPeca+'</span>';
-        }).join('');
-    }else{
-      infoDiv.innerHTML='<span style="font-size:11px;color:var(--c4)">Nenhuma pedra cadastrada nos SKUs selecionados</span>';
+
+  infoDiv.innerHTML=linhas.join('')||'<div style="font-size:11px;color:#6B7280">Selecione SKUs com pedras cadastradas no catálogo</div>';
+
+  // Preencher o total e o resumo
+  var tiposStr=Object.keys(todasPedras).map(function(k){return k+': '+todasPedras[k].toLocaleString('pt-BR');}).join(' | ');
+  if(resumoDiv){
+    if(totalPedrasGeral>0){
+      resumoDiv.innerHTML='<span style="font-size:13px">💎 Total: <strong>'+totalPedrasGeral.toLocaleString('pt-BR')+' pedras</strong></span>'
+        +(tiposStr?'<div style="font-size:10px;color:#6B7280;margin-top:2px">'+tiposStr+'</div>':'');
+      resumoDiv.style.color='#1D4ED8';
+    } else {
+      resumoDiv.innerHTML='Selecione SKUs para calcular automaticamente';
+      resumoDiv.style.color='#9CA3AF';
     }
   }
+
+  // Gravar o total no hidden input para calcOpTotal usar
+  sv('op-pedras', totalPedrasGeral>0 ? totalPedrasGeral : 0);
+  sv('op-pedras-peca', 1); // já está calculado no total
+  calcOpTotal();
 }
 
 function calcOpTotal(){
@@ -1863,16 +2279,25 @@ function calcOpTotal(){
   var isArvore=tip.includes('arvor')||tip.includes('árvore');
   var cus=parseFloat(v('op-cus'))||0;
   var qtdBase=0;
-  if(isCravar)qtdBase=parseInt(v('op-pedras'))||0;
+  if(isCravar)qtdBase=parseInt(v('op-pedras'))||0; // total pedras já calculado automaticamente
   else if(isInjecao)qtdBase=parseInt(v('op-galhos'))||0;
   else if(isArvore)qtdBase=parseInt(v('op-arvores'))||0;
   else qtdBase=parseInt(v('op-qen'))||0;
   var tot=document.getElementById('op-tot');
   if(tot)tot.textContent=R(qtdBase*cus);
 }
-function tglSku(sku){if(selSkus.has(sku))selSkus.delete(sku);else selSkus.add(sku);renderSkus();gerarOP();}
-function selAll(){pedidos.forEach(function(p){selSkus.add(p.sku);});renderSkus();}
-function selNone(){selSkus.clear();renderSkus();}
+function setSkuVal(sku,campo,val){
+  if(selSkus.has(sku)){
+    var cur=selSkus.get(sku)||{qtd:0,custo:0};
+    if(campo==='qtd')cur.qtd=parseInt(val)||0;
+    if(campo==='custo')cur.custo=parseFloat(val)||0;
+    selSkus.set(sku,cur);
+    gerarOP();
+  }
+}
+function setSkuQtd(sku,val){setSkuVal(sku,'qtd',val);}
+function tglSku(sku){if(selSkus.has(sku))selSkus.delete(sku);else selSkus.set(sku,{qtd:0,custo:0});renderSkus();gerarOP();}
+function selNone(){selSkus.clear();renderSkus();gerarOP();}
 function renderPreview(){gerarOP();}
 
 function limparOP(){selSkus.clear();gerarOP();document.getElementById('osel').textContent=0;}
@@ -1906,8 +2331,20 @@ function gerarOP(){
   var opArvores=parseInt(v('op-arvores'))||0;
   var opPcsArv=parseFloat(v('op-pcs-arv'))||0;
   // Qtd base para cálculo de total
-  var qtdPagavel=isCravar?opPedras:isInjecao?opGalhos:isArvore2?opArvores:qen;
-  var totGeral=qtdPagavel*cus;
+  // Para cravação: recalcular total real baseado nos itens (pedras×custo por SKU)
+  var totGeral=0;
+  if(isCravar){
+    items.forEach(function(pp){
+      var ml=modelos.find(function(m){return m.codigo===pp.sku;});
+      var plst=ml&&ml.modelo_pedras||[];
+      var ppp=plst.reduce(function(s,x){return s+(x.quantidade||1);},0);
+      var qpp=qen>0?qen:pp.qtd_solicitada;
+      totGeral+=Math.round(qpp*ppp)*cus;
+    });
+  } else {
+    var qtdPagavel=isInjecao?opGalhos:isArvore2?opArvores:qen;
+    totGeral=qtdPagavel*cus;
+  }
   var now=new Date();
   var opNum='OP-'+now.getFullYear()+''+String(now.getMonth()+1).padStart(2,'0')+''+String(now.getDate()).padStart(2,'0')+'-'+String(items.length).padStart(3,'0');
 
@@ -1937,13 +2374,40 @@ function gerarOP(){
   if(isCravar){
     detalheServ+='<div style="background:#EFF6FF;border:1px solid #BFDBFE;border-radius:8px;padding:12px;margin-bottom:14px">';
     detalheServ+='<div style="font-size:10px;font-weight:700;color:#1E40AF;text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px">💎 Detalhes da Cravação em Cera</div>';
-    detalheServ+='<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px">';
-    detalheServ+='<div><div style="font-size:9px;font-weight:700;color:#6B7280;text-transform:uppercase;margin-bottom:2px">Peças Enviadas</div><div style="font-size:16px;font-weight:700">'+(qen||'___')+'</div></div>';
-    detalheServ+='<div><div style="font-size:9px;font-weight:700;color:#6B7280;text-transform:uppercase;margin-bottom:2px">Pedras a Cravar</div><div style="font-size:16px;font-weight:700;color:#1D4ED8">'+(opPedras||'___')+'</div></div>';
-    detalheServ+='<div><div style="font-size:9px;font-weight:700;color:#6B7280;text-transform:uppercase;margin-bottom:2px">Pedras / Peça</div><div style="font-size:16px;font-weight:700">'+(opPedrasPeca||'___')+'</div></div>';
-    detalheServ+='<div><div style="font-size:9px;font-weight:700;color:#6B7280;text-transform:uppercase;margin-bottom:2px">Tipo de Pedra</div><div style="font-size:13px;font-weight:600">'+(opTipoPedra||'___')+'</div></div>';
-    detalheServ+='</div>';
-    detalheServ+='<div style="margin-top:8px;padding-top:8px;border-top:1px solid #BFDBFE;font-size:12px;color:#1E40AF"><strong>Pagamento:</strong> '+opPedras+' pedras × '+R(cus)+'/pedra = <strong>'+R(opPedras*cus)+'</strong></div>';
+    // Montar resumo de pedras por SKU a partir do catálogo
+    var resumoCrav='';
+    var totalCravPedras=0;
+    items.forEach(function(p){
+      var modelo=modelos.find(function(m){return m.codigo===p.sku;});
+      var pedras=modelo&&modelo.modelo_pedras||[];
+      var pedPorPca=pedras.reduce(function(s,x){return s+(x.quantidade||1);},0);
+      var qtdEnvSku=qen>0?qen:(p.qtd_solicitada||0); // usa qtd digitada no campo
+      var totSku=qtdEnvSku*pedPorPca;
+      totalCravPedras+=totSku;
+      if(pedPorPca>0){
+        var descP=pedras.map(function(x){return x.tipo_pedra+(x.tamanho_mm?' '+x.tamanho_mm+'mm':'')+' ×'+x.quantidade;}).join(', ');
+        resumoCrav+='<tr><td style="padding:4px 8px;font-family:monospace;font-size:12px;font-weight:700">'+p.sku+'</td>'
+          +'<td style="padding:4px 8px;font-size:12px">'+qtdEnvSku.toLocaleString('pt-BR')+'</td>'
+          +'<td style="padding:4px 8px;font-size:12px">'+pedPorPca+'</td>'
+          +'<td style="padding:4px 8px;font-size:12px;font-weight:700;color:#1D4ED8">'+totSku.toLocaleString('pt-BR')+'</td>'
+          +'<td style="padding:4px 8px;font-size:11px;color:#6B7280">'+descP+'</td></tr>';
+      }
+    });
+    // Atualizar op-pedras com o total real calculado do catálogo
+    sv('op-pedras', totalCravPedras);
+    opPedras=totalCravPedras;
+    detalheServ+='<table style="width:100%;border-collapse:collapse;margin-bottom:6px">';
+    detalheServ+='<thead><tr style="background:#1D4ED8;color:#fff">';
+    detalheServ+='<th style="padding:5px 8px;text-align:left;font-size:10px">SKU</th>';
+    detalheServ+='<th style="padding:5px 8px;text-align:left;font-size:10px">Peças</th>';
+    detalheServ+='<th style="padding:5px 8px;text-align:left;font-size:10px">Ped/Peça</th>';
+    detalheServ+='<th style="padding:5px 8px;text-align:left;font-size:10px">Total Pedras</th>';
+    detalheServ+='<th style="padding:5px 8px;text-align:left;font-size:10px">Tipo(s) de Pedra</th>';
+    detalheServ+='</tr></thead><tbody>'+resumoCrav+'</tbody>';
+    detalheServ+='<tfoot><tr style="background:#EFF6FF"><td colspan="3" style="padding:5px 8px;font-size:11px;font-weight:700;color:#1D4ED8">TOTAL PEDRAS</td>';
+    detalheServ+='<td style="padding:5px 8px;font-size:13px;font-weight:800;color:#1D4ED8">'+totalCravPedras.toLocaleString('pt-BR')+'</td><td></td></tr></tfoot>';
+    detalheServ+='</table>';
+    detalheServ+='<div style="margin-top:4px;padding:6px 10px;border-top:1px solid #BFDBFE;font-size:12px;color:#1E40AF"><strong>Pagamento:</strong> '+totalCravPedras.toLocaleString('pt-BR')+' pedras × '+R(cus)+'/pedra = <strong>'+R(totalCravPedras*cus)+'</strong></div>';
     detalheServ+='</div>';
   }else if(isInjecao){
     detalheServ+='<div style="background:#F0FAF6;border:1px solid #D1FAE5;border-radius:8px;padding:12px;margin-bottom:14px">';
@@ -1977,10 +2441,10 @@ function gerarOP(){
   html+='<th style="padding:8px 10px;text-align:left;font-size:11px;font-weight:600">Pedido</th>';
   html+='<th style="padding:8px 10px;text-align:left;font-size:11px;font-weight:600">Solicitante</th>';
   html+='<th style="padding:8px 10px;text-align:right;font-size:11px;font-weight:600">Qtd. Solic.</th>';
-  html+='<th style="padding:8px 10px;text-align:right;font-size:11px;font-weight:600">Qtd. Peças</th>';
-  html+='<th style="padding:8px 10px;text-align:right;font-size:11px;font-weight:600">'+(isCravar?'Pedras':isInjecao?'Galhos':isArvore2?'Árvores':'Enviada')+'</th>';
-  html+='<th style="padding:8px 10px;text-align:right;font-size:11px;font-weight:600">Conforme</th>';
-  html+='<th style="padding:8px 10px;text-align:right;font-size:11px;font-weight:600">Não Conf.</th>';
+  html+='<th style="padding:8px 10px;text-align:right;font-size:11px;font-weight:600">'+(isCravar?'Pedras':isInjecao?'Galhos':isArvore2?'Árvores':'Enviado')+'</th>';
+  // col Enviada removida (já está em Qtd.Enviada acima)
+  // col Conforme removida
+  // col NaoConf removida
   html+='<th style="padding:8px 10px;text-align:right;font-size:11px;font-weight:600">Custo Unit.</th>';
   html+='<th style="padding:8px 10px;text-align:right;font-size:11px;font-weight:600">Total</th>';
   html+='</tr></thead><tbody>';
@@ -1989,9 +2453,21 @@ function gerarOP(){
     var foto=skuFotoMap[p.sku]||photos[p.sku]||'';
     var modelo=modelos.find(function(m){return m.codigo===p.sku;});
     var desc=modelo&&modelo.descricao||'—';
-    var custo=cus||(p.custo_peca||0);
-    var qtdEnv=qen>0?qen:p.qtd_solicitada;
-    var itemTotal=qtdEnv*custo;
+    var skuMapD=selSkus.get(p.sku)||{qtd:0,custo:0};
+    var qtdMapSku=skuMapD.qtd||0;
+    var custoMapSku=skuMapD.custo||0;
+    // Custo: individual SKU > global campo > custo_peca
+    var custo=custoMapSku>0?custoMapSku:(cus>0?cus:(p.custo_peca||0));
+    // Qtd individual do SKU (definida no input por SKU) ou fallback para campo global / qtd_solicitada
+    var qtdEnv=qtdMapSku>0?qtdMapSku:(qen>0?qen:p.qtd_solicitada);
+    var qtdEnv=qtdMapSku>0?qtdMapSku:(qen>0?qen:p.qtd_solicitada);
+    // Para cravação: calcular pedras deste SKU específico
+    var modelo_item=modelos.find(function(m){return m.codigo===p.sku;});
+    var pedras_item=modelo_item&&modelo_item.modelo_pedras||[];
+    var pedPorPcaItem=pedras_item.reduce(function(s,x){return s+(x.quantidade||1);},0);
+    var totalPedrasItem=isCravar?Math.round(qtdEnv*pedPorPcaItem):0;
+    // itemTotal: para cravação = pedras × custo/pedra; outros = qtd × custo
+    var itemTotal=isCravar?(totalPedrasItem*custo):(qtdEnv*custo);
     totalOP+=itemTotal;
     var bg=i%2===0?'#fff':'#F9FAFB';
     html+='<tr style="background:'+bg+';border-bottom:1px solid #E5E7EB">';
@@ -2000,21 +2476,22 @@ function gerarOP(){
     html+='<td style="padding:8px 10px;font-size:12px;color:#374151">'+desc+'</td>';
     html+='<td style="padding:8px 10px;font-size:12px"><strong>#'+(p.pedidos&&p.pedidos.numero||'?')+'</strong></td>';
     html+='<td style="padding:8px 10px;font-size:12px">'+(p.pedidos&&p.pedidos.solicitante||'—')+'</td>';
-    html+='<td style="padding:8px 10px;text-align:right;font-weight:600">'+p.qtd_solicitada.toLocaleString('pt-BR')+'</td>';
-    var servQtd=isCravar?(opPedras>0?opPedras.toLocaleString('pt-BR'):'<span style="color:#9CA3AF">___</span>'):isInjecao?(opGalhos>0?opGalhos.toLocaleString('pt-BR'):'<span style="color:#9CA3AF">___</span>'):isArvore2?(opArvores>0?opArvores.toLocaleString('pt-BR'):'<span style="color:#9CA3AF">___</span>'):(qen>0?qen.toLocaleString('pt-BR'):'<span style="color:#9CA3AF">___</span>');
+    html+='<td style="padding:8px 10px;text-align:right;font-weight:600">'+qtdEnv.toLocaleString('pt-BR')+'</td>';
+    var servQtd=isCravar?(totalPedrasItem>0?totalPedrasItem.toLocaleString('pt-BR'):'<span style="color:#9CA3AF">___</span>'):isInjecao?(opGalhos>0?opGalhos.toLocaleString('pt-BR'):'<span style="color:#9CA3AF">___</span>'):isArvore2?(opArvores>0?opArvores.toLocaleString('pt-BR'):'<span style="color:#9CA3AF">___</span>'):(qen>0?qen.toLocaleString('pt-BR'):'<span style="color:#9CA3AF">___</span>');
     html+='<td style="padding:8px 10px;text-align:right;font-weight:700;color:#1D4ED8">'+servQtd+'</td>';
-    html+='<td style="padding:8px 10px;text-align:right;color:#059669">'+(qco>0?qco.toLocaleString('pt-BR'):'<span style="color:#9CA3AF">___</span>')+'</td>';
-    html+='<td style="padding:8px 10px;text-align:right;color:#DC2626">'+(qnc>0?qnc.toLocaleString('pt-BR'):'<span style="color:#9CA3AF">___</span>')+'</td>';
-    html+='<td style="padding:8px 10px;text-align:right;font-size:12px">'+(custo>0?R(custo):'<span style="color:#9CA3AF">___</span>')+'</td>';
+    // td Conforme removido da OP
+    // td NãoConf removido da OP
+    var custoExibir=isCravar?(pedPorPcaItem*custo):custo;
+    html+='<td style="padding:8px 10px;text-align:right;font-size:12px">'+(custoExibir>0?R(custoExibir):'<span style="color:#9CA3AF">___</span>')+(isCravar&&pedPorPcaItem>0?'<div style="font-size:9px;color:#6B7280">'+pedPorPcaItem+'ped×'+R(custo)+'</div>':'')+'</td>';
     html+='<td style="padding:8px 10px;text-align:right;font-weight:700;color:#0A4F3D">'+(itemTotal>0?R(itemTotal):'<span style="color:#9CA3AF">___</span>')+'</td>';
     html+='</tr>';
   });
   html+='</tbody>';
   html+='<tfoot><tr style="background:#0A4F3D;color:#fff">';
-  html+='<td colspan="5" style="padding:8px 10px;font-size:12px;font-weight:600">TOTAL GERAL — '+items.length+' SKU'+(items.length>1?'s':'')+'</td>';
+  html+='<td colspan="5" style="padding:8px 10px;font-size:12px;font-weight:600">TOTAL GERAL — '+items.length+' SKU'+(items.length>1?'s':'')+' </td>';
   html+='<td style="padding:8px 10px;text-align:right;font-weight:700">'+items.reduce(function(s,p){return s+p.qtd_solicitada;},0).toLocaleString('pt-BR')+'</td>';
   html+='<td style="padding:8px 10px;text-align:right;font-weight:700;color:#1D4ED8">'+(isCravar?opPedras:isInjecao?opGalhos:isArvore2?opArvores:qen)+'</td>';
-  html+='<td colspan="3" style="padding:8px 10px"></td>';
+  html+='<td style="padding:8px 10px"></td>';
   html+='<td style="padding:8px 10px;text-align:right;font-weight:700;font-size:15px">'+R(totGeral)+'</td>';
   html+='</tr></tfoot>';
   html+='</table>';
@@ -2077,35 +2554,166 @@ function delUser(id,nome){if(U&&id===U.id){toast('Não pode excluir seu próprio
 // SERVIÇOS
 function isArvore(tip){return tip&&(tip.toLowerCase().includes('arvore')||tip.toLowerCase().includes('\u00e1rvore'));}
 function isGalho(tip){return tip&&(tip.toLowerCase().includes('inje')&&tip.toLowerCase().includes('cera'));}
+function isCrav(tip){return tip&&tip.toLowerCase().includes('crava');}
 function checkTipoServ(){
   var tip=v('msv-tip');
   var arvWrap=document.getElementById('msv-arvore-wrap');
   var cusWrap=document.getElementById('msv-cus-wrap');
+  var cravWrap=document.getElementById('msv-cravacao-wrap');
+  var injWrap=document.getElementById('msv-injecao-wrap');
   var qenLbl=document.getElementById('msv-qen-lbl');
   var qcoLbl=document.getElementById('msv-qco-lbl');
   var arv=isArvore(tip);
   var gal=isGalho(tip);
+  var cravar=tip&&tip.toLowerCase().includes('crava');
   if(arvWrap)arvWrap.style.display=arv?'block':'none';
+  if(cravWrap)cravWrap.style.display=cravar?'block':'none';
+  if(injWrap)injWrap.style.display=gal?'block':'none';
   if(cusWrap)cusWrap.style.display=arv?'none':'block';
-  if(qenLbl)qenLbl.textContent=gal?'Qtd. Enviada (galhos)':'Qtd. Enviada (peças)';
-  if(qcoLbl)qcoLbl.textContent=gal?'Qtd. Conforme (galhos)':'Qtd. Conforme (peças)';
+  if(qenLbl)qenLbl.textContent=gal?'Qtd. Injeções Realizadas':'Qtd. Enviada (peças)';
+  if(qcoLbl)qcoLbl.textContent=gal?'Qtd. Injeções Conformes':'Qtd. Conforme (peças)';
+  if(cravar){atualizarPedrasCatalogo();}
+  if(gal){atualizarInjecaoCatalogo();}
+  // Resetar campos específicos ao trocar tipo
+  if(!gal){sv('msv-inj-pecas','');var ti=document.getElementById('msv-inj-tot');if(ti)ti.textContent='0';}
+  if(!cravar){sv('msv-pedras-pca','');}
+}
+function atualizarPedrasCatalogo(){
+  var sku=(v('msv-sku')||'').trim();
+  var infoDiv=document.getElementById('msv-pedras-info');
+  if(!sku){if(infoDiv)infoDiv.textContent='Digite o SKU para ver as pedras do catálogo.';return;}
+  var modelo=modelos.find(function(m){return m.codigo===sku;});
+  var pedras=modelo&&modelo.modelo_pedras||[];
+  if(!pedras.length){
+    if(infoDiv)infoDiv.textContent='SKU '+sku+' não tem pedras cadastradas no catálogo.';
+    sv('msv-pedras-pca','');calcTotalCravacao();return;
+  }
+  var totPedrasPorPeca=pedras.reduce(function(s,p){return s+(p.quantidade||1);},0);
+  var desc=pedras.map(function(p){return p.tipo_pedra+(p.tamanho_mm?' '+p.tamanho_mm+'mm':'')+' ×'+p.quantidade;}).join(', ');
+  if(infoDiv)infoDiv.innerHTML='<strong>'+totPedrasPorPeca+' pedras/peça</strong> · '+desc;
+  sv('msv-pedras-pca',totPedrasPorPeca);
+  calcTotalCravacao();
+}
+function calcTotalCravacao(){
+  var qen=parseInt(v('msv-qen'))||0;
+  var ppp=parseFloat(v('msv-pedras-pca'))||0;
+  var cus=parseFloat(v('msv-cus'))||0;
+  var totPedras=Math.round(qen*ppp);
+  var totCusto=totPedras*cus;
+  var elTot=document.getElementById('msv-pedras-tot');
+  var elCrav=document.getElementById('msv-crav-tot');
+  if(elTot)elTot.textContent=totPedras.toLocaleString('pt-BR')+' pedras';
+  if(elCrav)elCrav.textContent=totCusto.toLocaleString('pt-BR',{style:'currency',currency:'BRL'});
+}
+function checkRetornoServ(){
+  var sta=document.getElementById('msv-sta')&&document.getElementById('msv-sta').value;
+  var wrap=document.getElementById('msv-retorno-wrap');
+  if(wrap)wrap.style.display=(sta==='Concluído'||sta==='Atrasado')?'block':'none';
+  recalcValorRetorno();
+}
+function recalcValorRetorno(){
+  var tip=v('msv-tip');
+  var cravar=tip&&tip.toLowerCase().includes('crava');
+  var arv=isArvore(tip);
+  var conf=parseInt(v('msv-ret-conf'))||0;
+  var nc=parseInt(v('msv-ret-nc'))||0;
+  var cus=parseFloat(v('msv-cus'))||0;
+  var ppp=parseFloat(v('msv-pedras-pca'))||1;
+  var calcDiv=document.getElementById('msv-ret-calc');
+  var descEl=document.getElementById('msv-ret-desc');
+  var desc2El=document.getElementById('msv-ret-desc2');
+  var totEl=document.getElementById('msv-ret-total');
+  if(!conf&&!nc){if(calcDiv)calcDiv.style.display='none';return;}
+  if(calcDiv)calcDiv.style.display='block';
+  var total=0,descTxt='',desc2Txt='';
+  if(arv){
+    // Árvores: já tem campo próprio
+    total=conf*(parseFloat(v('msv-arv-val'))||0);
+    descTxt=conf+' árvores × '+R(parseFloat(v('msv-arv-val'))||0);
+    if(nc>0)desc2Txt='⚠️ '+nc+' não conformes desconsiderados';
+  } else if(cravar){
+    var pedrasConf=Math.round(conf*ppp);
+    var pedrasNC=Math.round(nc*ppp);
+    total=pedrasConf*cus;
+    descTxt=pedrasConf+' pedras conf. × '+R(cus)+'/pedra';
+    if(nc>0)desc2Txt='⚠️ Desconto: '+pedrasNC+' pedras NC = '+R(pedrasNC*cus);
+  } else {
+    total=conf*cus;
+    descTxt=conf+' peças × '+R(cus)+'/peça';
+    if(nc>0)desc2Txt='⚠️ Desconto: '+nc+' NC = '+R(nc*cus);
+  }
+  if(descEl)descEl.textContent=descTxt;
+  if(desc2El)desc2El.textContent=desc2Txt;
+  if(totEl)totEl.textContent=total.toLocaleString('pt-BR',{style:'currency',currency:'BRL'});
+  // Auto-preencher qtd conforme e não conforme nos campos principais
+  sv('msv-qco',conf);
+}
+function atualizarInjecaoCatalogo(){
+  var sku=(v('msv-sku')||'').trim();
+  var infoDiv=document.getElementById('msv-inj-info');
+  var ppiDiv=document.getElementById('msv-inj-ppi');
+  if(!sku){
+    if(infoDiv)infoDiv.textContent='Digite o SKU para carregar peças/injeção do catálogo';
+    if(ppiDiv)ppiDiv.textContent='—';
+    return;
+  }
+  var modelo=modelos.find(function(m){return m.codigo===sku;});
+  var ppi=modelo&&modelo.obs_molde?parseInt(modelo.obs_molde)||0:0;
+  if(ppi>0){
+    if(infoDiv)infoDiv.innerHTML='<strong>'+ppi+' peças/injeção</strong> (catálogo SKU '+sku+')';
+    if(ppiDiv){ppiDiv.textContent=ppi+' pç/inj';ppiDiv.style.color='var(--g)';}
+  } else {
+    if(infoDiv)infoDiv.textContent='SKU '+sku+' não tem peças/injeção cadastradas. Verifique o catálogo.';
+    if(ppiDiv){ppiDiv.textContent='—';ppiDiv.style.color='var(--c4)';}
+  }
+  calcInjecoes();
+}
+function calcInjecoes(){
+  var sku=(v('msv-sku')||'').trim();
+  var modelo=modelos.find(function(m){return m.codigo===sku;});
+  var ppi=modelo&&modelo.obs_molde?parseInt(modelo.obs_molde)||0:0;
+  var pecasSol=parseInt(v('msv-inj-pecas'))||0;
+  var injecoes=ppi>0?Math.ceil(pecasSol/ppi):0;
+  var totEl=document.getElementById('msv-inj-tot');
+  if(totEl)totEl.textContent=injecoes.toLocaleString('pt-BR');
+  // Preencher qtd enviada com as injeções calculadas
+  if(injecoes>0)sv('msv-qen',injecoes);
+}
+function checkTipoServSku(){
+  var tip=v('msv-tip');
+  if(tip&&tip.toLowerCase().includes('crava'))atualizarPedrasCatalogo();
 }
 function calcTotalArvores(){var qtd=parseFloat(v('msv-arv-qtd'))||0;var val=parseFloat(v('msv-arv-val'))||0;var tot=document.getElementById('msv-arv-tot');if(tot)tot.textContent=R(qtd*val);}
 function renderServicos(){
   var s=(v('svsrch')||'').toLowerCase();
-  var data=servicos.filter(function(sv){return(filtSV==='todos'||sv.status===filtSV)&&(!s||(sv.sku||'').toLowerCase().includes(s)||((sv.prestadores&&sv.prestadores.nome)||'').toLowerCase().includes(s)||(sv.tipo_servico||'').toLowerCase().includes(s));});
+  // Preencher select de tipos
+  var svtipoEl=document.getElementById('svtipo');
+  if(svtipoEl&&svtipoEl.options.length<=1){
+    var tiposUsados=[...new Set(servicos.map(function(x){return x.tipo_servico;}).filter(Boolean))].sort();
+    tiposUsados.forEach(function(t){var o=document.createElement('option');o.value=t;o.textContent=t;svtipoEl.appendChild(o);});
+  }
+  var tipoFilt=document.getElementById('svtipo')?document.getElementById('svtipo').value:'';
+  var data=servicos.filter(function(sv){return(filtSV==='todos'||sv.status===filtSV)&&(!tipoFilt||sv.tipo_servico===tipoFilt)&&(!s||(sv.sku||'').toLowerCase().includes(s)||((sv.prestadores&&sv.prestadores.nome)||'').toLowerCase().includes(s)||(sv.tipo_servico||'').toLowerCase().includes(s));});
   document.getElementById('sk-tot').textContent=servicos.length;document.getElementById('sk-and').textContent=servicos.filter(function(s){return s.status==='Em andamento';}).length;document.getElementById('sk-atr').textContent=servicos.filter(function(s){return s.status==='Atrasado';}).length;document.getElementById('sk-con').textContent=servicos.filter(function(s){return s.status==='Concluído';}).length;
   document.getElementById('svcnt').textContent=data.length+' registros';
   var tb=document.getElementById('svtb');if(!tb)return;
   tb.innerHTML=data.map(function(s){
     var arv=isArvore(s.tipo_servico);
+    var cravar=s.tipo_servico&&s.tipo_servico.toLowerCase().includes('crava');
+    var gal=isGalho(s.tipo_servico);
     var arvCell=arv&&s.qtd_arvores_montadas
       ?'<div style="display:flex;flex-direction:column;gap:1px"><span style="font-weight:700;color:var(--a)">🌳 '+s.qtd_arvores_montadas+'</span><span style="font-size:10.5px;color:var(--c5)">'+R(s.valor_por_arvore||0)+'/árv.</span></div>'
       :'<span style="color:var(--c3)">—</span>';
-    var totalR=arv?(s.total_arvores||((s.qtd_arvores_montadas||0)*(s.valor_por_arvore||0))):(s.custo_unitario||0)*(s.qtd_enviada||0);
+    var qtdBase=(s.qtd_conforme&&s.qtd_conforme>0)?s.qtd_conforme:(s.qtd_enviada||0);
+    // Para injeção: totalR = injeções × custo/injeção
+    var totalR=arv
+      ?(s.total_arvores||((s.qtd_arvores_montadas||0)*(s.valor_por_arvore||0)))
+      :cravar&&(s.pedras_por_peca||0)>0
+        ?(s.custo_unitario||0)*qtdBase*(s.pedras_por_peca||0)
+        :(s.custo_unitario||0)*qtdBase;
     var envLabel=arv?'galhos':'peças';
     return '<tr><td><strong>'+(s.prestadores&&s.prestadores.nome||'—')+'</strong></td><td>'+skuCell(s.sku)+'</td><td>'+(s.tipo_servico||'—')+'</td><td style="color:var(--c5)">'+fd(s.data_envio)+'</td><td style="color:var(--c5)">'+fd(s.data_retorno)+'</td>'
-      +'<td>'+(s.qtd_enviada?(s.qtd_enviada.toLocaleString('pt-BR')+(arv?'<span style="font-size:10px;color:var(--c4)"> gal</span>':'')):'—')+'</td>'
+      +'<td>'+(s.qtd_enviada?(s.qtd_enviada.toLocaleString('pt-BR')+(arv?'<span style="font-size:10px;color:var(--c4)"> árv</span>':gal?'<span style="font-size:10px;color:var(--gd)"> inj</span>':'')):'—')+(cravar&&s.pedras_por_peca?'<div style="font-size:10px;color:#1D4ED8">'+Math.round(s.qtd_enviada*(s.pedras_por_peca||0))+' pedras</div>':'')+(gal&&s.qtd_pecas_solicitadas?'<div style="font-size:10px;color:var(--gd)">'+s.qtd_pecas_solicitadas.toLocaleString('pt-BR')+' peças</div>':'')+'</td>'
       +'<td>'+(s.qtd_conforme?(s.qtd_conforme.toLocaleString('pt-BR')+(arv?'<span style="font-size:10px;color:var(--c4)"> gal</span>':'')):'—')+'</td>'
       +'<td>'+arvCell+'</td>'
       +'<td style="font-weight:700;color:'+(totalR>0?'var(--c8)':'var(--c4)')+'">'+R(totalR)+'</td>'
@@ -2114,18 +2722,29 @@ function renderServicos(){
   }).join('')||'<tr><td colspan="11" style="padding:18px;text-align:center;color:var(--c4)">Nenhum serviço</td></tr>';
 }
 function setSVF(el,f){filtSV=f;document.querySelectorAll('[onclick^="setSVF"]').forEach(function(b){b.classList.remove('on');});el.classList.add('on');renderServicos();}
-function openMServ(){sv('msv-t','Registrar Serviço');sv('msv-id','');['msv-prs','msv-tip','msv-sku','msv-ped','msv-env','msv-ret','msv-qen','msv-qco','msv-cus','msv-obs','msv-arv-qtd','msv-arv-val'].forEach(function(id){sv(id,'');});sv('msv-sta','Em andamento');if(document.getElementById('msv-arv-tot'))document.getElementById('msv-arv-tot').textContent='R$ 0,00';if(document.getElementById('msv-arvore-wrap'))document.getElementById('msv-arvore-wrap').style.display='none';openM('m-serv');}
-function editServ(id){var s=servicos.find(function(x){return x.id===id;});if(!s)return;sv('msv-t','Editar Serviço');sv('msv-id',id);sv('msv-prs',s.prestador_id);sv('msv-tip',s.tipo_servico);sv('msv-sku',s.sku);sv('msv-ped',s.pedido_num||'');sv('msv-env',s.data_envio||'');sv('msv-ret',s.data_retorno||'');sv('msv-qen',s.qtd_enviada||0);sv('msv-qco',s.qtd_conforme||0);sv('msv-cus',s.custo_unitario||0);sv('msv-sta',s.status);sv('msv-obs',s.observacao||'');sv('msv-arv-qtd',s.qtd_arvores_montadas||'');sv('msv-arv-val',s.valor_por_arvore||'');checkTipoServ();calcTotalArvores();openM('m-serv');}
+function openMServ(){sv('msv-t','Registrar Serviço');sv('msv-id','');['msv-prs','msv-tip','msv-sku','msv-ped','msv-env','msv-ret','msv-qen','msv-qco','msv-cus','msv-obs','msv-arv-qtd','msv-arv-val','msv-pedras-pca','msv-ret-conf','msv-ret-nc','msv-inj-pecas'].forEach(function(id){sv(id,'');});
+  var iw=document.getElementById('msv-injecao-wrap');if(iw)iw.style.display='none';
+  var ii=document.getElementById('msv-inj-tot');if(ii)ii.textContent='0';
+  var ip=document.getElementById('msv-inj-ppi');if(ip)ip.textContent='—';
+  var rw=document.getElementById('msv-retorno-wrap');if(rw)rw.style.display='none';sv('msv-sta','Em andamento');if(document.getElementById('msv-arv-tot'))document.getElementById('msv-arv-tot').textContent='R$ 0,00';if(document.getElementById('msv-arvore-wrap'))document.getElementById('msv-arvore-wrap').style.display='none';openM('m-serv');}
+function editServ(id){var s=servicos.find(function(x){return x.id===id;});if(!s)return;sv('msv-t','Editar Serviço');sv('msv-id',id);sv('msv-prs',s.prestador_id);sv('msv-tip',s.tipo_servico);sv('msv-sku',s.sku);sv('msv-ped',s.pedido_num||'');sv('msv-env',s.data_envio||'');sv('msv-ret',s.data_retorno||'');sv('msv-qen',s.qtd_enviada||0);sv('msv-qco',s.qtd_conforme||0);sv('msv-cus',s.custo_unitario||0);sv('msv-sta',s.status);sv('msv-obs',s.observacao||'');sv('msv-arv-qtd',s.qtd_arvores_montadas||'');sv('msv-arv-val',s.valor_por_arvore||'');sv('msv-pedras-pca',s.pedras_por_peca||'');sv('msv-ret-conf',s.qtd_conforme||'');sv('msv-ret-nc',s.qtd_perdas||'');sv('msv-inj-pecas',s.qtd_pecas_solicitadas||'');checkTipoServ();calcTotalArvores();calcTotalCravacao();if(isGalho(s.tipo_servico)){atualizarInjecaoCatalogo();}checkRetornoServ();openM('m-serv');}
 function salvarServ(){
   var prs=v('msv-prs');var sku=(v('msv-sku')||'').trim();var tip=v('msv-tip');
   if(!prs||!sku||!tip){toast('Preencha Prestador, SKU e Tipo.','err');return;}
   var id=v('msv-id');var arv=isArvore(tip);
   // Payload base — sem campos de árvore
+  var cravar2=tip&&tip.toLowerCase().includes('crava');
+  var gal2=isGalho(tip);
+  var injTotEl=document.getElementById('msv-inj-tot');
+  var injCalc=gal2?(parseInt(injTotEl&&injTotEl.textContent.replace(/\D/g,''))||0):0;
   var p={
     prestador_id:prs,sku:sku,tipo_servico:tip,pedido_num:v('msv-ped')||null,
     data_envio:v('msv-env')||null,data_retorno:v('msv-ret')||null,
     qtd_enviada:parseInt(v('msv-qen'))||0,qtd_conforme:parseInt(v('msv-qco'))||0,
     custo_unitario:parseFloat(v('msv-cus'))||0,
+    pedras_por_peca:cravar2?(parseFloat(v('msv-pedras-pca'))||0):0,
+    qtd_pecas_solicitadas:gal2?(parseInt(v('msv-inj-pecas'))||0):0,
+    injecoes_calculadas:injCalc,
     status:v('msv-sta'),observacao:v('msv-obs')||null
   };
   // Adiciona campos de árvore APENAS quando for Montagem Árvores
@@ -2139,6 +2758,14 @@ function salvarServ(){
   var query=id?db.from('servicos_prestadores').update(p).eq('id',id):db.from('servicos_prestadores').insert([p]);
   query.then(function(r){
     if(r.error){toast('Erro: '+r.error.message,'err');return;}
+    // Auto-atualizar etapa do item correspondente na página de pedidos
+    var pedNum=v('msv-ped');var skuServ=(v('msv-sku')||'').trim();var staServ=v('msv-sta');
+    if(skuServ&&pedNum&&staServ==='Concluído'){
+      var itemMatch=pedidos.find(function(x){return x.sku===skuServ&&x.pedidos&&String(x.pedidos.numero)===String(pedNum);});
+      if(itemMatch){
+        db.from('itens_pedido').update({etapa_atual:tip,status:'Em andamento'}).eq('id',itemMatch.id).then(function(){});
+      }
+    }
     toast(id?'Atualizado!':'Registrado!');closeM('m-serv');init();
   });
 }
@@ -2154,11 +2781,25 @@ function renderFinanceiro(){
   var totSV=svMes.reduce(function(s,sv){var arv=isArvore(sv.tipo_servico);return s+(arv?(sv.total_arvores||((sv.qtd_arvores_montadas||0)*(sv.valor_por_arvore||0))):(parseFloat(sv.custo_unitario||0)*parseInt(sv.qtd_enviada||0)));},0);
   var mes2=getMes('fpmes')||mes;
   var fpM=folha.filter(function(f){return f.competencia&&f.competencia.startsWith(mes);});
-  var totFP=fpM.reduce(function(s,f){return s+parseFloat(f.total||f.salario_base||0);},0);
+  var totFP=colaboradores.filter(function(c){return c.ativo;}).reduce(function(s,c){return s+parseFloat(c.salario_real||0);},0);
   var totPcs=pedidos.reduce(function(s,p){return s+p.qtd_solicitada;},0)||1;
   var totGeral=totCF+totSV+totFP;
   document.getElementById('cf-tot').textContent=R(totCF);
   document.getElementById('cf-sv').textContent=R(totSV);
+  // Previsto (em andamento) x Realizado (concluídos)
+  var svPrev=svMes.filter(function(s){return s.status==='Em andamento'||s.status==='Atrasado';});
+  var svReal=svMes.filter(function(s){return s.status==='Concluído';});
+  var calcSvTotal=function(arr){return arr.reduce(function(sum,s){
+    var arv=isArvore(s.tipo_servico),crav=isCrav(s.tipo_servico),gal=isGalho(s.tipo_servico);
+    var qtdBase=(s.qtd_conforme&&s.qtd_conforme>0)?s.qtd_conforme:(s.qtd_enviada||0);
+    return sum+(arv?(s.total_arvores||((s.qtd_arvores_montadas||0)*(s.valor_por_arvore||0))):crav&&(s.pedras_por_peca||0)>0?(s.custo_unitario||0)*qtdBase*(s.pedras_por_peca||0):(s.custo_unitario||0)*qtdBase);
+  },0);};
+  var totPrev=calcSvTotal(svPrev);
+  var totReal=calcSvTotal(svReal);
+  var elPrev=document.getElementById('cf-sv-prev');if(elPrev)elPrev.textContent=R(totPrev);
+  var elReal=document.getElementById('cf-sv-real');if(elReal)elReal.textContent=R(totReal);
+  var elPrevCnt=document.getElementById('cf-sv-prev-cnt');if(elPrevCnt)elPrevCnt.textContent=svPrev.length+' serviço'+(svPrev.length!==1?'s':'')+' em andamento';
+  var elRealCnt=document.getElementById('cf-sv-real-cnt');if(elRealCnt)elRealCnt.textContent=svReal.length+' serviço'+(svReal.length!==1?'s':'')+' concluído'+(svReal.length!==1?'s':'');
   var cfFpEl=document.getElementById('cf-fp');if(cfFpEl)cfFpEl.textContent=R(totFP);
   document.getElementById('cf-total').textContent=R(totGeral);
   document.getElementById('cf-peca').textContent=R(totGeral/totPcs);
@@ -2197,11 +2838,69 @@ function renderFinanceiro(){
     }).join('')||'<tr><td colspan="3" style="padding:10px;text-align:center;color:var(--c4)">—</td></tr>';
   }var svptb=document.getElementById('svptb');if(svptb)svptb.innerHTML=svMes.map(function(s){
     var arv=isArvore(s.tipo_servico);
-    var totalS=arv?(s.total_arvores||((s.qtd_arvores_montadas||0)*(s.valor_por_arvore||0))):(s.custo_unitario||0)*(s.qtd_enviada||0);
+    var crav=isCrav(s.tipo_servico);
+    var gal=isGalho(s.tipo_servico);
+    // Calcular total correto por tipo
+    var qtdBase=(s.qtd_conforme&&s.qtd_conforme>0)?s.qtd_conforme:(s.qtd_enviada||0);
+    var totalS=arv?(s.total_arvores||((s.qtd_arvores_montadas||0)*(s.valor_por_arvore||0))):crav&&(s.pedras_por_peca||0)>0?(s.custo_unitario||0)*qtdBase*(s.pedras_por_peca||0):(s.custo_unitario||0)*qtdBase;
     if(totalS<=0&&!arv&&!(s.custo_unitario>0))return '';
-    var detArv=arv&&s.qtd_arvores_montadas?'<div style="font-size:10.5px;color:var(--a)">🌳 '+s.qtd_arvores_montadas+' árv. × '+R(s.valor_por_arvore||0)+'</div>':'';
-    return '<tr><td><strong>'+(s.prestadores&&s.prestadores.nome||'—')+'</strong></td><td>'+skuCell(s.sku)+'</td><td>'+(s.tipo_servico||'')+'</td><td>'+R(arv?(s.valor_por_arvore||0):(s.custo_unitario||0))+(arv?'<span style="font-size:9px;color:var(--c5)">/árv</span>':'')+'</td><td>'+(arv?((s.qtd_arvores_montadas||0)+' árv'):(s.qtd_enviada||0))+'</td><td style="font-weight:700;color:var(--g)">'+R(totalS)+'</td></tr>'+detArv;
-  }).filter(Boolean).join('')||'<tr><td colspan="6" style="padding:12px;text-align:center;color:var(--c4)">Sem serviços registrados</td></tr>';}
+    // Montar célula QTD com detalhe por tipo
+    // Se concluído: usar conforme (quantidade real executada)
+    // Se em andamento: usar enviada (quantidade solicitada)
+    var concluido=s.status==='Concluído';
+    var qtdFinal=concluido&&(s.qtd_conforme||0)>0?s.qtd_conforme:s.qtd_enviada||0;
+    var qtdCell='';
+    if(arv){
+      var arvFinal=concluido&&(s.qtd_conforme||0)>0?s.qtd_conforme:(s.qtd_arvores_montadas||0);
+      qtdCell=arvFinal.toLocaleString('pt-BR')+' árv';
+      if(concluido&&s.qtd_enviada>0&&s.qtd_conforme!==s.qtd_enviada){
+        qtdCell+='<div style="font-size:10px;color:var(--c5)">solicitado: '+(s.qtd_enviada||0)+' árv</div>';
+      }
+    } else if(gal){
+      qtdCell=qtdFinal.toLocaleString('pt-BR')+' inj';
+      var pecasFinal=concluido&&(s.qtd_conforme||0)>0
+        ?(s.qtd_conforme*((parseInt(s.qtd_pecas_solicitadas/s.qtd_enviada*10)||10)/10))
+        :(s.qtd_pecas_solicitadas||0);
+      if(s.qtd_pecas_solicitadas>0)qtdCell+='<div style="font-size:10.5px;color:var(--g)">'+Math.round(pecasFinal).toLocaleString('pt-BR')+' peças</div>';
+      if(concluido&&s.qtd_enviada>0&&s.qtd_conforme>0&&s.qtd_conforme!==s.qtd_enviada){
+        qtdCell+='<div style="font-size:10px;color:var(--c5)">solicitado: '+s.qtd_enviada.toLocaleString('pt-BR')+' inj</div>';
+      }
+    } else if(crav&&(s.pedras_por_peca||0)>0){
+      qtdCell=qtdFinal.toLocaleString('pt-BR')+' pçs';
+      qtdCell+='<div style="font-size:10.5px;color:var(--b)">'+Math.round(qtdFinal*(s.pedras_por_peca||0)).toLocaleString('pt-BR')+' pedras</div>';
+      if(concluido&&s.qtd_enviada>0&&s.qtd_conforme>0&&s.qtd_conforme!==s.qtd_enviada){
+        qtdCell+='<div style="font-size:10px;color:var(--c5)">solicitado: '+s.qtd_enviada.toLocaleString('pt-BR')+' pçs</div>';
+      }
+    } else {
+      qtdCell=qtdFinal.toLocaleString('pt-BR')+' pçs';
+      if(concluido&&s.qtd_enviada>0&&s.qtd_conforme>0&&s.qtd_conforme!==s.qtd_enviada){
+        qtdCell+='<div style="font-size:10px;color:var(--c5)">solicitado: '+s.qtd_enviada.toLocaleString('pt-BR')+' pçs</div>';
+      }
+    }
+    // Custo unitário com detalhe por tipo
+    var custoCell='';
+    if(arv){
+      custoCell=R(s.valor_por_arvore||0)+'<span style="font-size:9px;color:var(--c5)">/árv</span>';
+    } else if(crav&&(s.pedras_por_peca||0)>0){
+      custoCell=R(s.custo_unitario||0)+'<span style="font-size:9px;color:var(--c5)">/pedra</span>';
+      custoCell+='<div style="font-size:10.5px;color:var(--b)">'+R((s.pedras_por_peca||0)*(s.custo_unitario||0))+'/pç</div>';
+    } else if(gal){
+      custoCell=R(s.custo_unitario||0)+'<span style="font-size:9px;color:var(--c5)">/inj</span>';
+    } else {
+      custoCell=R(s.custo_unitario||0);
+    }
+    // Status badge
+    var statusBadge=s.status==='Concluído'?'<span class="bdg bgg">● Concluído</span>':s.status==='Atrasado'?'<span class="bdg bgr">● Atrasado</span>':'<span class="bdg bgb">● Em andamento</span>';
+    return '<tr>'
+      +'<td><strong>'+(s.prestadores&&s.prestadores.nome||'—')+'</strong></td>'
+      +'<td>'+skuCell(s.sku)+'</td>'
+      +'<td style="font-size:12px;color:var(--c6)">'+(s.tipo_servico||'')+'</td>'
+      +'<td style="font-size:12.5px">'+qtdCell+'</td>'
+      +'<td style="font-size:12.5px">'+custoCell+'</td>'
+      +'<td style="font-weight:700;color:var(--g)">'+R(totalS)+'</td>'
+      +'<td>'+statusBadge+'</td>'
+      +'</tr>';
+  }).filter(Boolean).join('')||'<tr><td colspan="7" style="padding:12px;text-align:center;color:var(--c4)">Sem serviços registrados</td></tr>';}
 function getRpVal(id,def){var el=document.getElementById(id);return el?(parseFloat(el.value)||def):def;}
 
 function calcRateio(){
@@ -2231,7 +2930,7 @@ function calcRateio(){
   var cfM = custosFixos.filter(function(cf){return cf.competencia&&cf.competencia.startsWith(mes);});
   var svMes = servicos.filter(function(sv){var d=sv.data_retorno||sv.data_envio||'';return d.startsWith(mes);});
   var fpM = folha.filter(function(f){return f.competencia&&f.competencia.startsWith(mes);});
-  var totFP = fpM.reduce(function(s,f){return s+parseFloat(f.total||f.salario_base||0);},0);
+  var totFP=colaboradores.filter(function(c){return c.ativo;}).reduce(function(s,c){return s+parseFloat(c.salario_real||0);},0);
 
   // Custos fixos overhead (energia, aluguel, manutenção, outros)
   var cfFixed = cfM.filter(function(cf){return ['energia','aluguel','manutencao','outros'].includes(cf.categoria);});
@@ -2310,10 +3009,17 @@ function calcRateio(){
     var svSku = svMes.filter(function(s){return s.sku===sku;});
     var cusSvExt = svSku.reduce(function(sum,s){
       var arv = isArvore(s.tipo_servico);
+      var crav = isCrav(s.tipo_servico);
+      var gal = isGalho(s.tipo_servico);
+      // Usar qtd_conforme se disponível (serviço concluído), senão qtd_enviada
+      var qtdBase = (s.qtd_conforme&&s.qtd_conforme>0) ? s.qtd_conforme : (s.qtd_enviada||0);
       if(arv) return sum + (s.total_arvores||((s.qtd_arvores_montadas||0)*(s.valor_por_arvore||0)));
-      var precoTab = getPrecoServico(s.tipo_servico,s.prestador_id);
-      var custo = precoTab!==null ? precoTab : (s.custo_unitario||0);
-      return sum + custo*(s.qtd_enviada||0);
+      // Buscar preço da tabela de preços (fixo)
+      var precoTab = getPrecoServico(s.tipo_servico, s.prestador_id);
+      var custoUnit = precoTab!==null ? precoTab : (s.custo_unitario||0);
+      // Cravação: custo é por pedra, multiplica por pedras/peça
+      if(crav && (s.pedras_por_peca||0)>0) return sum + custoUnit * qtdBase * (s.pedras_por_peca||0);
+      return sum + custoUnit * qtdBase;
     },0);
     var cusSvExtPca = qtdProd>0 ? cusSvExt/qtdProd : 0;
 
@@ -2368,12 +3074,19 @@ function calcRateio(){
 
     // ── Card visual ──────────────────────────────────────
     var urgBadge = urgente?'<span style="background:#FEE2E2;color:#991B1B;font-size:9px;font-weight:700;padding:1px 5px;border-radius:3px;margin-left:4px">🚨</span>':'';
-    var card = '<div style="background:#fff;border:1px solid var(--c2);border-radius:var(--rr);overflow:hidden;box-shadow:var(--sh)">';
+    var card = '<div id="rp-card-'+sku+'" class="rp-card" style="background:#fff;border:1px solid var(--c2);border-radius:var(--rr);overflow:hidden;box-shadow:var(--sh)">';
 
-    // Card header
+    // Card header com checkbox de seleção e botão imprimir
     card += '<div style="background:var(--gd);padding:11px 14px;display:flex;align-items:center;gap:10px">';
+    card += '<input type="checkbox" id="chk-'+sku+'" style="width:15px;height:15px;cursor:pointer;accent-color:#fff;flex-shrink:0" title="Selecionar para imprimir" onchange="toggleSelCard(\''+sku+'\',this.checked)">';
     if(foto)card += '<img src="'+foto+'" style="width:40px;height:40px;object-fit:contain;border-radius:4px;background:rgba(255,255,255,.15)" loading="lazy">';
-    card += '<div style="flex:1"><div style="color:#fff;font-weight:700;font-size:15px;font-family:var(--fm)">'+sku+urgBadge+'</div>';
+    var fotoTooltip=foto?'<div style="position:relative;display:inline-block">'
+      +'<span style="color:#fff;font-weight:700;font-size:15px;font-family:var(--fm);cursor:default">'+sku+urgBadge+'</span>'
+      +'<div style="display:none;position:absolute;left:0;top:110%;background:#fff;border:1px solid #e5e7eb;border-radius:8px;padding:4px;box-shadow:0 4px 16px rgba(0,0,0,.15);z-index:999;width:120px">'
+        +'<img src="'+foto+'" style="width:112px;height:112px;object-fit:contain;border-radius:4px">'
+      +'</div>'
+      +'</div>':('<span style="color:#fff;font-weight:700;font-size:15px;font-family:var(--fm)">'+sku+urgBadge+'</span>');
+    card += '<div style="flex:1"><div onmouseenter="this.querySelector(\'.foto-tip\')&&(this.querySelector(\'.foto-tip\').style.display=\'block\')" onmouseleave="this.querySelector(\'.foto-tip\')&&(this.querySelector(\'.foto-tip\').style.display=\'none\')">'+fotoTooltip.replace('style="display:none;','class="foto-tip" style="display:none;')+'</div>';
     card += '<div style="color:rgba(255,255,255,.7);font-size:11px">'+desc+(pesoG>0?' · '+pesoG+'g latão':'')+'</div></div>';
     card += '<div style="text-align:right"><div style="color:#fff;font-size:20px;font-weight:800">'+R(totalPca)+'</div>';
     card += '<div style="color:rgba(255,255,255,.55);font-size:10px">por peça c/ '+getRpVal('rp-perda',5)+'% perda</div></div></div>';
@@ -2495,10 +3208,81 @@ function salvarCF(){
 function delCF(id){cfm('Excluir custo','Permanente.',function(){db.from('custos_fixos').delete().eq('id',id).then(function(){custosFixos=custosFixos.filter(function(c){return c.id!==id;});renderFinanceiro();toast('Excluído!');});});}
 
 // FOLHA
-function renderFolha(){var mes=getMes('fpmes');var data=folha.filter(function(f){return f.competencia&&f.competencia.startsWith(mes);});var totF=data.reduce(function(s,f){return s+parseFloat(f.total||f.salario_base||0);},0);var totE=data.reduce(function(s,f){return s+parseFloat(f.encargos||0);},0);document.getElementById('fp-tot').textContent=R(totF);document.getElementById('fp-qtd').textContent=data.length;document.getElementById('fp-med').textContent=R(data.length?data.reduce(function(s,f){return s+parseFloat(f.salario_base||0);},0)/data.length:0);document.getElementById('fp-enc').textContent=R(totE);document.getElementById('fpcnt').textContent=data.length+' registros';var tb=document.getElementById('fptb');if(!tb)return;tb.innerHTML=data.map(function(f){return '<tr><td><strong>'+f.colaborador+'</strong></td><td>'+R(f.salario_base)+'</td><td>'+R(f.encargos)+'</td><td>'+R(f.outros)+'</td><td style="font-weight:700">'+R(f.total||f.salario_base)+'</td><td style="color:var(--c5)">'+(f.competencia&&f.competencia.slice(0,7)||'—')+'</td><td><div class="ra"><button class="btn btnd bxs" onclick="delFP(\''+f.id+'\')">🗑️</button></div></td></tr>';}).join('')||'<tr><td colspan="7" style="padding:18px;text-align:center;color:var(--c4)">Nenhum registro no mês</td></tr>';}
+function renderFolha(){
+  // Usa diretamente a tabela de colaboradores (sem filtro de mês)
+  var data=colaboradores.filter(function(c){return c.ativo;});
+  var totReal=data.reduce(function(s,c){return s+parseFloat(c.salario_real||0);},0);
+  var totEnc=data.reduce(function(s,c){return s+parseFloat(c.encargos||0);},0);
+  var medReal=data.length?totReal/data.length:0;
+  document.getElementById('fp-tot').textContent=R(totReal);
+  document.getElementById('fp-qtd').textContent=data.length;
+  document.getElementById('fp-med').textContent=R(medReal);
+  document.getElementById('fp-enc').textContent=R(totEnc);
+  document.getElementById('fpcnt').textContent=data.length+' colaborador'+(data.length!==1?'es':'');var tb=document.getElementById('fptb');if(!tb)return;tb.innerHTML=data.map(function(c){
+    var admStr=c.data_admissao?new Date(c.data_admissao+'T00:00:00').toLocaleDateString('pt-BR'):'—';
+    var nascStr=c.data_nascimento?new Date(c.data_nascimento+'T00:00:00').toLocaleDateString('pt-BR'):'—';
+    var base=parseFloat(c.salario_base||0),enc=parseFloat(c.encargos||0),out=parseFloat(c.outros||0);
+    var real=parseFloat(c.salario_real||0);
+    return '<tr>'
+      +'<td><strong>'+c.nome+'</strong></td>'
+      +'<td style="font-size:12px;color:var(--c5)">'+(c.role||'—')+'</td>'
+      +'<td style="font-size:12px">'+admStr+'</td>'
+      +'<td style="font-size:12px">'+nascStr+'</td>'
+      +'<td>'+R(base)+'</td>'
+      +'<td>'+R(enc)+'</td>'
+      +'<td>'+R(out)+'</td>'
+      +'<td style="font-weight:700;font-size:14px;color:var(--g)">'+(real>0?R(real):'<span style="color:var(--c4)">—</span>')+'</td>'
+      +'<td><div class="ra">'
+        +'<button class="btn btsm btns" onclick="editColabFolha(this.dataset.id)" data-id="'+c.id+'">✏️</button>'
+        +'</div></td>'
+      +'</tr>';
+  }).join('')||'<tr><td colspan="7" style="padding:18px;text-align:center;color:var(--c4)">Nenhum registro no mês</td></tr>';}
 function calcFP(){var t=(parseFloat(v('mfp-sal'))||0)+(parseFloat(v('mfp-enc'))||0)+(parseFloat(v('mfp-out'))||0);document.getElementById('mfp-tot').textContent=R(t);}
+function openMFP(){
+  ['mfp-id','mfp-col','mfp-func','mfp-sal','mfp-enc','mfp-out','mfp-real','mfp-adm','mfp-nasc'].forEach(function(id){
+    var el=document.getElementById(id);if(el)el.value='';
+  });
+  var t=document.getElementById('mfp-titulo');if(t)t.textContent='Novo Colaborador';
+  var totEl=document.getElementById('mfp-tot');if(totEl)totEl.textContent='R$ 0,00';
+  var rs=document.getElementById('mfp-real-show');if(rs)rs.textContent='R$ 0,00';
+}
+function editColabFolha(id){
+  var c=colaboradores.find(function(x){return x.id===id;});if(!c)return;
+  sv('mfp-id',id);sv('mfp-col',c.nome);sv('mfp-func',c.role||'');
+  sv('mfp-sal',c.salario_base||'');sv('mfp-enc',c.encargos||'');sv('mfp-out',c.outros||'');
+  sv('mfp-real',c.salario_real||'');
+  sv('mfp-adm',c.data_admissao||'');sv('mfp-nasc',c.data_nascimento||'');
+  var t=document.getElementById('mfp-titulo');if(t)t.textContent='Editar: '+c.nome;
+  calcFolhaPreview();
+  openM('m-fp');
+}
 function openMFP(){sv('mfp-col','');sv('mfp-mes',new Date().toISOString().slice(0,7));['mfp-sal','mfp-enc','mfp-out'].forEach(function(id){sv(id,'');});document.getElementById('mfp-tot').textContent='R$ 0,00';openM('m-fp');}
-function salvarFP(){var col=v('mfp-col');var mes=v('mfp-mes');var sal=parseFloat(v('mfp-sal'))||0;if(!col||!mes||!sal){toast('Preencha colaborador, mês e salário.','err');return;}db.from('folha_pagamento').insert([{colaborador:col,competencia:mes+'-01',salario_base:sal,encargos:parseFloat(v('mfp-enc'))||0,outros:parseFloat(v('mfp-out'))||0}]).then(function(r){if(r.error){toast('Erro: '+r.error.message,'err');return;}toast('Registrado!');closeM('m-fp');db.from('folha_pagamento').select('*').order('competencia',{ascending:false}).then(function(r2){folha=r2.data||[];renderFolha();});});}
+function calcFolhaPreview(){
+  var sal=parseFloat(document.getElementById('mfp-sal')&&document.getElementById('mfp-sal').value)||0;
+  var enc=parseFloat(document.getElementById('mfp-enc')&&document.getElementById('mfp-enc').value)||0;
+  var out=parseFloat(document.getElementById('mfp-out')&&document.getElementById('mfp-out').value)||0;
+  var real=parseFloat(document.getElementById('mfp-real')&&document.getElementById('mfp-real').value)||0;
+  var total=sal+enc+out;
+  var totEl=document.getElementById('mfp-tot');if(totEl)totEl.textContent=R(total);
+  var rs=document.getElementById('mfp-real-show');if(rs)rs.textContent=R(real);
+}
+function salvarFP(){
+  var id=v('mfp-id');
+  var nome=(v('mfp-col')||'').trim();
+  var sal=parseFloat(v('mfp-sal'))||0;
+  if(!nome){toast('Informe o nome do colaborador.','err');return;}
+  var payload={
+    nome:nome,
+    role:v('mfp-func')||null,
+    salario_base:sal,
+    encargos:parseFloat(v('mfp-enc'))||0,
+    outros:parseFloat(v('mfp-out'))||0,
+    salario_real:parseFloat(v('mfp-real'))||0,
+    data_admissao:v('mfp-adm')||null,
+    data_nascimento:v('mfp-nasc')||null
+  };
+  var op=id?db.from('colaboradores').update(payload).eq('id',id):db.from('colaboradores').insert([{ativo:true,...payload}]);
+  op.then(function(r){if(r.error){toast('Erro: '+r.error.message,'err');return;}toast('Registrado!');closeM('m-fp');db.from('folha_pagamento').select('*').order('competencia',{ascending:false}).then(function(r2){folha=r2.data||[];renderFolha();});});}
 function delFP(id){cfm('Excluir pagamento','Permanente.',function(){db.from('folha_pagamento').delete().eq('id',id).then(function(){folha=folha.filter(function(f){return f.id!==id;});renderFolha();toast('Excluído!');});});}
 
 // ESTOQUE
@@ -2512,7 +3296,7 @@ function cancelarCatNova(){document.getElementById('cat-nova-wrap').style.displa
 function confirmarCatNova(){var nome=(v('cat-nova-input')||'').trim();if(!nome){toast('Digite o nome da categoria.','err');return;}var val=nome.toLowerCase().replace(/\s+/g,'-');var sel=document.getElementById('mins-cat');if(!sel.querySelector('option[value="'+val+'"]')){var opt=document.createElement('option');opt.value=val;opt.textContent=nome;sel.appendChild(opt);}sv('mins-cat',val);cancelarCatNova();toast('Categoria "'+nome+'" adicionada!');}
 
 // CATÁLOGO
-function renderCatalogo(){var s=(v('catsrch')||'').toLowerCase();var data=modelos.filter(function(m){return!s||m.codigo.toLowerCase().includes(s)||(m.descricao||'').toLowerCase().includes(s);});document.getElementById('catcnt').textContent=data.length+' modelos';var g=document.getElementById('catgrid');if(!g)return;if(!data.length){g.innerHTML='<div style="padding:30px;color:var(--c4);text-align:center">📸 Nenhum modelo cadastrado</div>';return;}g.innerHTML=data.map(function(m){var pedras=m.modelo_pedras||[];return '<div class="card"><div class="card-h"><div class="card-av">'+m.codigo.slice(0,2)+'</div><div class="card-name">'+m.codigo+'</div></div>'+(m.foto_url?'<div style="height:100px;overflow:hidden;background:var(--c1)"><img src="'+m.foto_url+'" style="width:100%;height:100%;object-fit:contain"></div>':'<div style="height:65px;background:var(--gl);display:flex;align-items:center;justify-content:center;color:var(--g);font-size:22px;opacity:.4">📸</div>')+'<div class="card-b">'+(m.descricao?'<div class="ir"><span class="il">Descrição</span><span class="iv">'+m.descricao+'</span></div>':'')+'<div class="ir"><span class="il">Peso Latão</span><span class="iv">'+(m.peso_laton_g||0)+' g</span></div><div class="ir"><span class="il">Borrachas em Estoque</span><span class="iv">'+(m.qtd_borrachas||1)+' un.</span></div><div class="ir"><span class="il">Peças por Borracha</span><span class="iv">'+(m.obs_molde||'—')+'</span></div>'+(pedras.length?'<div style="margin-top:5px;padding-top:5px;border-top:1px solid var(--c2)"><div style="font-size:10px;font-weight:600;color:var(--c5);margin-bottom:3px">PEDRAS</div><div style="display:flex;gap:3px;flex-wrap:wrap">'+pedras.map(function(p){return '<span style="background:var(--bl);color:var(--b);font-size:10.5px;padding:2px 6px;border-radius:3px">'+p.tipo_pedra+(p.tamanho_mm?' '+p.tamanho_mm+'mm':'')+' x'+p.quantidade+'</span>';}).join('')+'</div></div>':'')+'</div><div class="card-f"><button class="btn btng bsm" style="flex:1" onclick="editModelo(\''+m.id+'\')">✏️ Editar</button><button class="btn btng bsm" onclick="dupModelo(\''+m.id+'\')" title="Duplicar" style="padding:3px 9px">&#x29C9; Dup</button><button class="btn btnd bsm" onclick="delModelo(\''+m.id+'\',\''+m.codigo+'\')">🗑️</button></div></div>';}).join('');}
+function renderCatalogo(){var s=(v('catsrch')||'').toLowerCase();var data=modelos.filter(function(m){return!s||m.codigo.toLowerCase().includes(s)||(m.descricao||'').toLowerCase().includes(s);});document.getElementById('catcnt').textContent=data.length+' modelos';var g=document.getElementById('catgrid');if(!g)return;if(!data.length){g.innerHTML='<div style="padding:30px;color:var(--c4);text-align:center">📸 Nenhum modelo cadastrado</div>';return;}g.innerHTML=data.map(function(m){var pedras=m.modelo_pedras||[];return '<div class="card"><div class="card-h"><div class="card-av">'+m.codigo.slice(0,2)+'</div><div class="card-name">'+m.codigo+'</div></div>'+(m.foto_url?'<div style="height:100px;overflow:hidden;background:var(--c1)"><img src="'+m.foto_url+'" style="width:100%;height:100%;object-fit:contain"></div>':'<div style="height:65px;background:var(--gl);display:flex;align-items:center;justify-content:center;color:var(--g);font-size:22px;opacity:.4">📸</div>')+'<div class="card-b">'+(m.descricao?'<div class="ir"><span class="il">Descrição</span><span class="iv">'+m.descricao+'</span></div>':'')+'<div class="ir"><span class="il">Peso Latão</span><span class="iv">'+(m.peso_laton_g||0)+' g</span></div><div class="ir"><span class="il">Borrachas em Estoque</span><span class="iv">'+(m.qtd_borrachas||1)+' un.</span></div><div class="ir"><span class="il">Peças por Injeção</span><span class="iv">'+(m.obs_molde||'—')+'</span></div>'+(m.localizacao_borracha?'<div class="ir"><span class="il">📍 Localização</span><span class="iv" style="font-weight:600;color:var(--b)">'+m.localizacao_borracha+'</span></div>':'')+(pedras.length?'<div style="margin-top:5px;padding-top:5px;border-top:1px solid var(--c2)"><div style="font-size:10px;font-weight:600;color:var(--c5);margin-bottom:3px">PEDRAS</div><div style="display:flex;gap:3px;flex-wrap:wrap">'+pedras.map(function(p){return '<span style="background:var(--bl);color:var(--b);font-size:10.5px;padding:2px 6px;border-radius:3px">'+p.tipo_pedra+(p.tamanho_mm?' '+p.tamanho_mm+'mm':'')+' x'+p.quantidade+'</span>';}).join('')+'</div></div>':'')+'</div><div class="card-f"><button class="btn btng bsm" style="flex:1" onclick="editModelo(\''+m.id+'\')">✏️ Editar</button><button class="btn btng bsm" onclick="dupModelo(\''+m.id+'\')" title="Duplicar" style="padding:3px 9px">&#x29C9; Dup</button><button class="btn btnd bsm" onclick="delModelo(\''+m.id+'\',\''+m.codigo+'\')">🗑️</button></div></div>';}).join('');}
 function setFotoPreview(src){sv('mmod-url',src);sv('mmod-urltext','');document.getElementById('foto-img').src=src;document.getElementById('foto-preview').style.display='block';document.getElementById('foto-placeholder').style.display='none';}
 function limparFoto(){sv('mmod-url','');sv('mmod-urltext','');document.getElementById('foto-img').src='';document.getElementById('foto-preview').style.display='none';document.getElementById('foto-placeholder').style.display='block';}
 function handleFotoFile(input){if(!input.files||!input.files[0])return;var r=new FileReader();r.onload=function(e){setFotoPreview(e.target.result);};r.readAsDataURL(input.files[0]);}
@@ -2565,8 +3349,8 @@ function pedraRowSelChange(sel){
   if(manualInput)manualInput.style.display=sel.value==='__manual__'?'block':'none';
   if(sel.value==='__manual__'&&manualInput){manualInput.focus();}
 }
-function openMModelo(){sv('mmod-t','Novo Modelo');sv('mmod-id','');['mmod-cod','mmod-desc','mmod-peso','mmod-obs'].forEach(function(id){sv(id,'');});sv('mmod-bor',1);limparFoto();document.getElementById('pedrasrows').innerHTML='';addPedraRow();openM('m-modelo');}
-function editModelo(id){var m=modelos.find(function(x){return x.id===id;});if(!m)return;sv('mmod-t','Editar Modelo');sv('mmod-id',id);sv('mmod-cod',m.codigo);sv('mmod-desc',m.descricao||'');sv('mmod-peso',m.peso_laton_g||0);sv('mmod-bor',m.qtd_borrachas||1);sv('mmod-obs',m.obs_molde||'');if(m.foto_url){setFotoPreview(m.foto_url);}else{limparFoto();}document.getElementById('pedrasrows').innerHTML='';(m.modelo_pedras||[]).forEach(function(p){addPedraRow(p.tipo_pedra,p.tamanho_mm,p.quantidade);});if(!(m.modelo_pedras||[]).length)addPedraRow();openM('m-modelo');}
+function openMModelo(){sv('mmod-t','Novo Modelo');sv('mmod-id','');['mmod-cod','mmod-desc','mmod-peso','mmod-obs','mmod-loc'].forEach(function(id){sv(id,'');});sv('mmod-bor',1);limparFoto();document.getElementById('pedrasrows').innerHTML='';addPedraRow();openM('m-modelo');}
+function editModelo(id){var m=modelos.find(function(x){return x.id===id;});if(!m)return;sv('mmod-t','Editar Modelo');sv('mmod-id',id);sv('mmod-cod',m.codigo);sv('mmod-desc',m.descricao||'');sv('mmod-peso',m.peso_laton_g||0);sv('mmod-bor',m.qtd_borrachas||1);sv('mmod-obs',m.obs_molde||'');sv('mmod-loc',m.localizacao_borracha||'');if(m.foto_url){setFotoPreview(m.foto_url);}else{limparFoto();}document.getElementById('pedrasrows').innerHTML='';(m.modelo_pedras||[]).forEach(function(p){addPedraRow(p.tipo_pedra,p.tamanho_mm,p.quantidade);});if(!(m.modelo_pedras||[]).length)addPedraRow();openM('m-modelo');}
 function dupModelo(id){
   var m=modelos.find(function(x){return x.id===id;});
   if(!m)return;
@@ -2592,7 +3376,7 @@ function dupModelo(id){
   toast('✏️ Altere o código e salve para criar a cópia.');
 }
 
-function salvarModelo(){var codigo=(v('mmod-cod')||'').trim();if(!codigo){toast('Código é obrigatório.','err');return;}var id=v('mmod-id');var p={codigo:codigo,descricao:v('mmod-desc'),peso_laton_g:parseFloat(v('mmod-peso'))||0,qtd_borrachas:parseInt(v('mmod-bor'))||1,obs_molde:v('mmod-obs'),foto_url:v('mmod-url')||null};(id?db.from('catalogo_modelos').update(p).eq('id',id).select().single():db.from('catalogo_modelos').insert([p]).select().single()).then(function(r){if(r.error){toast('Erro: '+(r.error.message.includes('unique')?'Código já existe.':r.error.message),'err');return;}var modId=r.data&&r.data.id;if(modId){db.from('modelo_pedras').delete().eq('modelo_id',modId).then(function(){var pedrasRows=[].slice.call(document.getElementById('pedrasrows').children);var pedras=pedrasRows.map(function(row){
+function salvarModelo(){var codigo=(v('mmod-cod')||'').trim();if(!codigo){toast('Código é obrigatório.','err');return;}var id=v('mmod-id');var p={codigo:codigo,descricao:v('mmod-desc'),peso_laton_g:parseFloat(v('mmod-peso'))||0,qtd_borrachas:parseInt(v('mmod-bor'))||1,obs_molde:v('mmod-obs'),localizacao_borracha:v('mmod-loc')||null,foto_url:v('mmod-url')||null};(id?db.from('catalogo_modelos').update(p).eq('id',id).select().single():db.from('catalogo_modelos').insert([p]).select().single()).then(function(r){if(r.error){toast('Erro: '+(r.error.message.includes('unique')?'Código já existe.':r.error.message),'err');return;}var modId=r.data&&r.data.id;if(modId){db.from('modelo_pedras').delete().eq('modelo_id',modId).then(function(){var pedrasRows=[].slice.call(document.getElementById('pedrasrows').children);var pedras=pedrasRows.map(function(row){
               var sel=row.querySelector('[data-field="tipo-pedra-sel"]');
               var manual=row.querySelector('[data-field="tipo-pedra-manual"]');
               var mmInp=row.querySelector('[data-field="mm"]');
@@ -2680,7 +3464,7 @@ function doExport(tipo){
   if(tipo==='atividades'){
     csv=fmt([['Data','Horário','SKU','Pedido Nº','Colaborador','Etapa','Tipo','Prioridade','Qtd Peças','Em Atraso','Motivo Atraso','Observação','Finalizado','Status Final','Qtd Conforme','Qtd Perdas','Yield%','Obs Resultado','Data Término']].concat(atividades.map(function(a){var dt=a.criado_em?new Date(a.criado_em):null;var y=a.qtd_conforme>0&&(a.qtd_conforme+(a.qtd_perdas||0))>0?Math.round(a.qtd_conforme/(a.qtd_conforme+(a.qtd_perdas||0))*100):0;return[dt?dt.toLocaleDateString('pt-BR'):'',dt?dt.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'}):'',a.sku,a.pedido_num||'',a.colaborador,a.etapa,a.tipo,a.prioridade,a.qtd_pecas,a.em_atraso?'Sim':'Não',a.motivo_atraso||'',a.observacao||'',a.finalizado?'Sim':'Não',a.status_finalizacao||'',a.qtd_conforme||0,a.qtd_perdas||0,y+'%',a.obs_resultado||'',a.data_termino?new Date(a.data_termino).toLocaleString('pt-BR'):''];})));fn='atividades_completo.csv';
   }else if(tipo==='pedidos'){
-    csv=fmt([['Pedido Nº','Solicitante','Data Pedido','Data Entrega','SKU','Qtd Solicitada','Etapa Atual','Status','Atraso (dias)','Yield%','Custo/Peça R$','Observação']].concat(pedidos.map(function(p){return[p.pedidos&&p.pedidos.numero||'',p.pedidos&&p.pedidos.solicitante||'',p.pedidos&&p.pedidos.data_pedido?p.pedidos.data_pedido.split('-').reverse().join('/'):'',p.pedidos&&p.pedidos.data_entrega?p.pedidos.data_entrega.split('-').reverse().join('/'):'',p.sku,p.qtd_solicitada,p.etapa_atual,p.status,p.atraso_dias||0,Math.round(p.yield_pct||0)+'%',p.custo_peca||0,p.pedidos&&p.pedidos.observacao||''];})));fn='pedidos_completo.csv';
+    csv=fmt([['Pedido Nº','Solicitante','Data Pedido','Data Entrega','SKU','Qtd Solicitada','Etapa Atual','Status','Atraso (dias)','Yield%','Observação']].concat(pedidos.map(function(p){return[p.pedidos&&p.pedidos.numero||'',p.pedidos&&p.pedidos.solicitante||'',p.pedidos&&p.pedidos.data_pedido?p.pedidos.data_pedido.split('-').reverse().join('/'):'',p.pedidos&&p.pedidos.data_entrega?p.pedidos.data_entrega.split('-').reverse().join('/'):'',p.sku,p.qtd_solicitada,p.etapa_atual,p.status,p.atraso_dias||0,Math.round(p.yield_pct||0)+'%',p.custo_peca||0,p.pedidos&&p.pedidos.observacao||''];})));fn='pedidos_completo.csv';
   }else if(tipo==='financeiro'){
     var rowsF=[['Tipo','Descrição/Prestador','SKU','Tipo Serviço','Qtd','Custo Unit R$','Total R$','Competência','Observação']];
     custosFixos.forEach(function(cf){rowsF.push(['Custo Fixo',cf.descricao,'','',1,cf.valor,cf.valor,cf.competencia?cf.competencia.slice(0,7):'','']);});
@@ -2939,6 +3723,17 @@ function iniciarRealtime(){
           var b=document.getElementById('connbadge');
           if(b){var orig=b.textContent;b.textContent='● Nova atividade';setTimeout(function(){b.textContent=orig;},2000);}
         }
+      })
+      .on('postgres_changes',{event:'*',schema:'public',table:'folha_pagamento'},function(){
+        // Recarregar folha ao detectar mudanças
+        db.from('folha_pagamento').select('*').order('competencia',{ascending:false}).then(function(r){
+          if(!r.error){
+            folha=r.data||[];
+            renderFolha();
+            // Atualizar financeiro se estiver aberto
+            if(pgCur==='financeiro'){renderFinanceiro();}
+          }
+        });
       })
       .on('postgres_changes',{event:'UPDATE',schema:'public',table:'itens_pedido'},function(payload){
         if(payload.new){
