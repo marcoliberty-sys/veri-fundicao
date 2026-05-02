@@ -738,7 +738,7 @@ tbody td{padding:8px 12px;font-size:13px;color:var(--c7);}
   <!-- PÁGINA: CATÁLOGO SKUs (Fotos) -->
   <div id="pg-catalogo" class="page">
     <div class="fbar">
-      <input class="si" id="cat-srch" type="text" placeholder="🔍 Buscar SKU..." oninput="renderCatalogo()" style="width:200px">
+      <input class="si" id="catsrch" type="text" placeholder="🔍 Buscar SKU..." oninput="renderCatalogo()" style="width:200px">
       <button class="btn btnp bsm" onclick="openMModelo()">+ Modelo</button>
     </div>
     <div id="catgrid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:12px">
@@ -762,6 +762,26 @@ tbody td{padding:8px 12px;font-size:13px;color:var(--c7);}
     <div style="margin-top:12px">
       <div class="sh"><span class="st">Histórico de Uso</span></div>
       <div class="tc"><table><thead><tr><th>Equipamento</th><th>Colaborador</th><th>SKU</th><th>Início</th><th>Fim</th><th>Obs.</th></tr></thead><tbody id="usotb"></tbody></table></div>
+    </div>
+  </div>
+
+
+  <!-- PÁGINA: ESTOQUE/INSUMOS -->
+  <div id="pg-estoque" class="page">
+    <div class="kpis">
+      <div class="kpi ga"><div class="kl">Total Insumos</div><div class="kv" id="est-tot">—</div></div>
+      <div class="kpi da"><div class="kl">Abaixo do Mínimo</div><div class="kv" id="est-al">—</div></div>
+      <div class="kpi wa"><div class="kl">Movimentos Hoje</div><div class="kv" id="est-mv">—</div></div>
+      <div class="kpi ia"><div class="kl">Valor Total</div><div class="kv" id="est-vl">—</div></div>
+    </div>
+    <div class="tc" style="margin-bottom:14px">
+      <div class="sh"><span class="st">Insumos em Estoque</span><span class="sbdg" id="est-cnt">0</span><button class="btn btsm btnp" style="margin-left:auto" onclick="openMIns()">+ Insumo</button></div>
+      <table><thead><tr><th>Insumo</th><th>Unidade</th><th>Estoque Atual</th><th>Mínimo</th><th>Custo Unit.</th><th>Total R$</th><th>Situação</th><th></th></tr></thead>
+      <tbody id="insttb"></tbody></table>
+    </div>
+    <div style="margin-top:12px">
+      <div class="sh"><span class="st">Movimentações Recentes</span><button class="btn btsm btnp" style="margin-left:auto" onclick="openMMov()">+ Movimento</button></div>
+      <div class="tc"><table><thead><tr><th>Data</th><th>Insumo</th><th>Tipo</th><th>Qtd</th><th>Custo</th><th>SKU</th><th>Motivo</th></tr></thead><tbody id="movtb"></tbody></table></div>
     </div>
   </div>
 
@@ -1313,11 +1333,7 @@ function renderPagina(page){
     financeiro:function(){renderFinanceiro();},
     folha:function(){renderFolha();},
     estoque:function(){renderEstoque();},
-    catalogo:function(){
-      var catGrid=document.getElementById('catgrid');
-      if(catGrid)catGrid.innerHTML='<div class="loading"><div class="spinner"></div> Carregando fotos...</div>';
-      carregarFotosCompletas(function(){renderCatalogo();});
-    },
+    catalogo:function(){renderCatalogo();},
     equipamentos:function(){renderEquipamentos();},
     relatorio:function(){gerarRel();},
     dashboard:function(){renderDash();}
