@@ -719,25 +719,25 @@ tbody td{padding:8px 12px;font-size:13px;color:var(--c7);}
     <div id="lixeira-content">
       <div class="tc" style="margin-bottom:10px">
         <div class="tch"><span class="tct">📋 Itens de Pedido Excluídos</span><span class="cb" id="lx-itens-cnt">0</span></div>
-        <table style="font-size:12px"><thead><tr><th>SKU</th><th>Pedido</th><th>Solicitante</th><th>Qtd</th><th>Excluído em</th><th></th></tr></thead>
-        <tbody id="lx-itens-tb"><tr><td colspan="6" style="padding:10px;text-align:center;color:var(--c4)">✅ Vazia</td></tr></tbody></table>
+        <div style="overflow-x:auto"><table style="min-width:700px" style="font-size:12px"><thead><tr><th>SKU</th><th>Pedido</th><th>Solicitante</th><th>Qtd</th><th>Excluído em</th><th></th></tr></thead>
+        <tbody id="lx-itens-tb"><tr><td colspan="6" style="padding:10px;text-align:center;color:var(--c4)">✅ Vazia</td></tr></tbody></table></div>
       </div>
       <div class="tc" style="margin-bottom:10px">
         <div class="tch"><span class="tct">⚡ Atividades Excluídas</span><span class="cb" id="lx-ativ-cnt">0</span></div>
-        <table style="font-size:12px"><thead><tr><th>SKU</th><th>Colaborador</th><th>Etapa</th><th>Excluído em</th><th></th></tr></thead>
-        <tbody id="lx-ativ-tb"><tr><td colspan="5" style="padding:10px;text-align:center;color:var(--c4)">✅ Vazia</td></tr></tbody></table>
+        <div style="overflow-x:auto"><table style="min-width:700px" style="font-size:12px"><thead><tr><th>SKU</th><th>Colaborador</th><th>Etapa</th><th>Excluído em</th><th></th></tr></thead>
+        <tbody id="lx-ativ-tb"><tr><td colspan="5" style="padding:10px;text-align:center;color:var(--c4)">✅ Vazia</td></tr></tbody></table></div>
       </div>
       <div class="tc">
         <div class="tch"><span class="tct">🔧 Serviços Externos Excluídos</span><span class="cb" id="lx-serv-cnt">0</span></div>
-        <table style="font-size:12px"><thead><tr><th>Prestador</th><th>SKU</th><th>Tipo</th><th>Excluído em</th><th></th></tr></thead>
-        <tbody id="lx-serv-tb"><tr><td colspan="5" style="padding:10px;text-align:center;color:var(--c4)">✅ Vazia</td></tr></tbody></table>
+        <div style="overflow-x:auto"><table style="min-width:700px" style="font-size:12px"><thead><tr><th>Prestador</th><th>SKU</th><th>Tipo</th><th>Excluído em</th><th></th></tr></thead>
+        <tbody id="lx-serv-tb"><tr><td colspan="5" style="padding:10px;text-align:center;color:var(--c4)">✅ Vazia</td></tr></tbody></table></div>
       </div>
     </div>
   </div>
 
   <!-- PÁGINA: CATÁLOGO SKUs (Fotos) -->
   <div id="pg-catalogo" class="page">
-    <div class="fbar">
+    <div class="fbar" style="margin-bottom:14px">
       <input class="si" id="catsrch" type="text" placeholder="🔍 Buscar SKU..." oninput="renderCatalogo()" style="width:200px">
       <span class="sbdg" id="catcnt" style="margin-left:8px">0 modelos</span>
       <button class="btn btnp bsm" onclick="openMModelo()">+ Modelo</button>
@@ -757,12 +757,12 @@ tbody td{padding:8px 12px;font-size:13px;color:var(--c7);}
     </div>
     <div class="tc" style="margin-bottom:14px">
       <div class="sh"><span class="st">Equipamentos</span><button class="btn btsm btnp" style="margin-left:auto" onclick="openMEquip()">+ Equipamento</button></div>
-      <table><thead><tr><th>Nome / Descrição</th><th>Tipo</th><th>Estado</th><th>Setor</th><th>Nº Série</th><th></th></tr></thead>
-      <tbody id="eqtb"></tbody></table>
+      <div style="overflow-x:auto"><table style="min-width:700px"><thead><tr><th style="min-width:180px">Nome / Descrição</th><th>Tipo</th><th>Estado</th><th>Setor</th><th>Nº Série</th><th></th></tr></thead>
+      <tbody id="eqtb"></tbody></table></div>
     </div>
     <div style="margin-top:12px">
       <div class="sh"><span class="st">Histórico de Uso</span></div>
-      <div class="tc"><table><thead><tr><th>Equipamento</th><th>Colaborador</th><th>SKU</th><th>Início</th><th>Fim</th><th>Obs.</th></tr></thead><tbody id="usotb"></tbody></table></div>
+      <div class="tc"><div style="overflow-x:auto"><table style="min-width:700px"><thead><tr><th>Equipamento</th><th>Colaborador</th><th>SKU</th><th>Início</th><th>Fim</th><th>Obs.</th></tr></thead><tbody id="usotb"></tbody></table></div></div>
     </div>
   </div>
 
@@ -777,12 +777,12 @@ tbody td{padding:8px 12px;font-size:13px;color:var(--c7);}
     </div>
     <div class="tc" style="margin-bottom:14px">
       <div class="sh"><span class="st">Insumos em Estoque</span><button class="btn btsm btnp" style="margin-left:auto" onclick="openMIns()">+ Insumo</button></div>
-      <table><thead><tr><th>Insumo</th><th>Unidade</th><th>Estoque</th><th>Mínimo</th><th>Situação</th><th>Custo Unit.</th><th></th></tr></thead>
-      <tbody id="esttb"></tbody></table>
+      <div style="overflow-x:auto"><table style="min-width:700px"><thead><tr><th style="min-width:180px">Insumo</th><th>Unidade</th><th>Estoque</th><th>Mínimo</th><th>Situação</th><th>Custo Unit.</th><th></th></tr></thead>
+      <tbody id="esttb"></tbody></table></div>
     </div>
     <div style="margin-top:12px">
       <div class="sh"><span class="st">Movimentações Recentes</span><button class="btn btsm btnp" style="margin-left:auto" onclick="openMMov()">+ Movimento</button></div>
-      <div class="tc"><table><thead><tr><th>Insumo</th><th>Tipo</th><th>Quantidade</th><th>SKU</th><th>Data</th></tr></thead><tbody id="movtb"></tbody></table></div>
+      <div class="tc"><div style="overflow-x:auto"><table style="min-width:700px"><thead><tr><th>Insumo</th><th>Tipo</th><th>Quantidade</th><th>SKU</th><th>Data</th></tr></thead><tbody id="movtb"></tbody></table></div></div>
     </div>
   </div>
 
