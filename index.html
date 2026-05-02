@@ -739,6 +739,7 @@ tbody td{padding:8px 12px;font-size:13px;color:var(--c7);}
   <div id="pg-catalogo" class="page">
     <div class="fbar">
       <input class="si" id="catsrch" type="text" placeholder="🔍 Buscar SKU..." oninput="renderCatalogo()" style="width:200px">
+      <span class="sbdg" id="catcnt" style="margin-left:8px">0 modelos</span>
       <button class="btn btnp bsm" onclick="openMModelo()">+ Modelo</button>
     </div>
     <div id="catgrid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:12px">
@@ -751,13 +752,13 @@ tbody td{padding:8px 12px;font-size:13px;color:var(--c7);}
     <div class="kpis">
       <div class="kpi ga"><div class="kl">Total</div><div class="kv" id="eq-tot">—</div></div>
       <div class="kpi da"><div class="kl">Em Manutenção</div><div class="kv" id="eq-man">—</div></div>
-      <div class="kpi ia"><div class="kl">Ativos</div><div class="kv" id="eq-ati">—</div></div>
+      <div class="kpi ra"><div class="kl">Inativos</div><div class="kv" id="eq-ina">—</div></div>
       <div class="kpi wa"><div class="kl">Uso Hoje</div><div class="kv" id="eq-uso">—</div></div>
     </div>
     <div class="tc" style="margin-bottom:14px">
       <div class="sh"><span class="st">Equipamentos</span><button class="btn btsm btnp" style="margin-left:auto" onclick="openMEquip()">+ Equipamento</button></div>
-      <table><thead><tr><th>Nome</th><th>Tipo</th><th>Nº Série</th><th>Setor</th><th>Estado</th><th>Observação</th><th></th></tr></thead>
-      <tbody id="eq-tb"></tbody></table>
+      <table><thead><tr><th>Nome</th><th>Tipo</th><th>Estado</th><th>Setor</th><th>Nº Série</th><th></th></tr></thead>
+      <tbody id="eqtb"></tbody></table>
     </div>
     <div style="margin-top:12px">
       <div class="sh"><span class="st">Histórico de Uso</span></div>
@@ -775,9 +776,9 @@ tbody td{padding:8px 12px;font-size:13px;color:var(--c7);}
       <div class="kpi ia"><div class="kl">Valor Total</div><div class="kv" id="est-vl">—</div></div>
     </div>
     <div class="tc" style="margin-bottom:14px">
-      <div class="sh"><span class="st">Insumos em Estoque</span><span class="sbdg" id="est-cnt">0</span><button class="btn btsm btnp" style="margin-left:auto" onclick="openMIns()">+ Insumo</button></div>
+      <div class="sh"><span class="st">Insumos em Estoque</span><button class="btn btsm btnp" style="margin-left:auto" onclick="openMIns()">+ Insumo</button></div>
       <table><thead><tr><th>Insumo</th><th>Unidade</th><th>Estoque Atual</th><th>Mínimo</th><th>Custo Unit.</th><th>Total R$</th><th>Situação</th><th></th></tr></thead>
-      <tbody id="insttb"></tbody></table>
+      <tbody id="esttb"></tbody></table>
     </div>
     <div style="margin-top:12px">
       <div class="sh"><span class="st">Movimentações Recentes</span><button class="btn btsm btnp" style="margin-left:auto" onclick="openMMov()">+ Movimento</button></div>
