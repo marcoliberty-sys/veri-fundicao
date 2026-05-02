@@ -5,144 +5,81 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Sistema Fundição Veri/Pink Heart</title>
 <script>
-// ── Supabase Fetch Shim (sem biblioteca, sem postMessage) ──
-const SURL='https://sykyvlpcrpfbzngbkkng.supabase.co';
-const SKEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InN5a3l2bHBjcnBmYnpuZ2Jra25nIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzM5NjEzNTksImV4cCI6MjA4OTUzNzM1OX0.uDPSrhRyza0u7UO3JsDuA5D8Z-DuQyN5ywfRto1Od4I';
+// ── Proxy via Edge Function (sem problema de CORS/Headers) ──
+const PROXY_URL = 'https://sykyvlpcrpfbzngbkkng.supabase.co/functions/v1/api-proxy';
 
-function _supa_fetch(method, path, body) {
-  return fetch(SURL + path, {
-    method: method,
-    headers: {
-      'Content-Type': 'application/json',
-      'apikey': SKEY,
-      'Authorization': 'Bearer ' + SKEY,
-      'Prefer': method === 'POST' ? 'return=representation' : 'return=representation'
-    },
-    body: body ? JSON.stringify(body) : undefined
-  }).then(function(r) {
-    return r.json().then(function(data) {
-      if (!r.ok) return { data: null, error: data };
-      return { data: Array.isArray(data) ? data : [data], error: null };
-    });
-  }).catch(function(e) {
-    return { data: null, error: { message: e.message } };
-  });
+function _call(table, method, query, filters, payload) {
+  return fetch(PROXY_URL, {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({ table, method, query, filters, payload })
+  })
+  .then(function(r) { return r.json(); })
+  .then(function(r) {
+    if (r.error) return { data: null, error: r.error };
+    return { data: r.data ?? [], error: null };
+  })
+  .catch(function(e) { return { data: null, error: { message: e.message } }; });
 }
 
-// Builder pattern que imita db.from().select().eq().then()
-function _builder(table, method, payload) {
-  var _table = table;
+function _builder(table) {
+  var _method = 'select';
+  var _query = '*';
   var _filters = [];
-  var _select = '*';
-  var _order = null;
-  var _limit = null;
-  var _single = false;
-  var _method = method || 'GET';
-  var _payload = payload || null;
-  var _upsert = false;
-  var _onConflict = null;
-
-  function buildUrl() {
-    var url = '/rest/v1/' + _table + '?select=' + encodeURIComponent(_select);
-    _filters.forEach(function(f) { url += '&' + f; });
-    if (_order) url += '&order=' + _order;
-    if (_limit) url += '&limit=' + _limit;
-    return url;
-  }
+  var _payload = null;
 
   var obj = {
-    select: function(cols) { _select = cols || '*'; return obj; },
-    eq: function(col, val) { _filters.push(col + '=eq.' + val); return obj; },
-    neq: function(col, val) { _filters.push(col + '=neq.' + val); return obj; },
-    gt: function(col, val) { _filters.push(col + '=gt.' + val); return obj; },
-    gte: function(col, val) { _filters.push(col + '=gte.' + val); return obj; },
-    lt: function(col, val) { _filters.push(col + '=lt.' + val); return obj; },
-    lte: function(col, val) { _filters.push(col + '=lte.' + val); return obj; },
-    is: function(col, val) { _filters.push(col + '=is.' + (val===null?'null':val)); return obj; },
-    ilike: function(col, val) { _filters.push(col + '=ilike.' + val); return obj; },
-    in: function(col, vals) { _filters.push(col + '=in.(' + vals.join(',') + ')'); return obj; },
-    order: function(col, opts) {
-      var asc = opts && opts.ascending === false ? 'desc' : 'asc';
-      _order = col + '.' + asc;
-      return obj;
-    },
-    limit: function(n) { _limit = n; return obj; },
-    single: function() { _single = true; return obj; },
+    select: function(q) { _query = q || '*'; return obj; },
+    eq: function(col, val) { _filters.push({type:'eq', col, val}); return obj; },
+    neq: function(col, val) { _filters.push({type:'neq', col, val}); return obj; },
+    is: function(col, val) { _filters.push({type:'is', col, val}); return obj; },
+    in: function(col, val) { _filters.push({type:'in', col, val}); return obj; },
+    gte: function(col, val) { _filters.push({type:'gte', col, val}); return obj; },
+    lte: function(col, val) { _filters.push({type:'lte', col, val}); return obj; },
+    gt: function(col, val) { _filters.push({type:'gte', col, val}); return obj; },
+    lt: function(col, val) { _filters.push({type:'lte', col, val}); return obj; },
+    order: function(col, opts) { _filters.push({type:'order', col, asc: opts?.ascending !== false}); return obj; },
+    limit: function(n) { _filters.push({type:'limit', val: n}); return obj; },
+    single: function() { _filters.push({type:'single'}); return obj; },
+    insert: function(data) { _method='insert'; _payload=data; return obj; },
+    update: function(data) { _method='update'; _payload=data; return obj; },
+    delete: function() { _method='delete'; return obj; },
     upsert: function(data, opts) {
-      _method = 'POST';
-      _payload = data;
-      _upsert = true;
-      if (opts && opts.onConflict) _onConflict = opts.onConflict;
+      _method='upsert';
+      _payload=data;
+      if(opts?.onConflict) _filters.push({type:'eq', onConflict: opts.onConflict});
       return obj;
     },
     then: function(resolve, reject) {
-      var url = buildUrl();
-      var method = _method;
-      var headers = {
-        'Content-Type': 'application/json',
-        'apikey': SKEY,
-        'Authorization': 'Bearer ' + SKEY
-      };
-      if (method === 'GET') {
-        headers['Prefer'] = 'count=exact';
-      } else if (method === 'POST') {
-        headers['Prefer'] = _upsert
-          ? 'resolution=merge-duplicates,return=representation'
-          : 'return=representation';
-        if (_onConflict) headers['Prefer'] += ',on_conflict=' + _onConflict;
-        // POST para upsert vai para a URL base sem filtros
-        if (_upsert) url = '/rest/v1/' + _table;
-      } else if (method === 'PATCH') {
-        headers['Prefer'] = 'return=representation';
-        url = buildUrl();
-      } else if (method === 'DELETE') {
-        url = buildUrl();
-      }
-
-      var fetchOpts = { method: method, headers: headers };
-      if (_payload !== null) {
-        fetchOpts.body = JSON.stringify(Array.isArray(_payload) ? _payload : [_payload]);
-      }
-
-      return fetch(SURL + url, fetchOpts)
-        .then(function(r) {
-          if (r.status === 204) return resolve ? resolve({ data: [], error: null }) : { data: [], error: null };
-          return r.json().then(function(data) {
-            var result;
-            if (!r.ok) {
-              result = { data: null, error: data };
-            } else {
-              var arr = Array.isArray(data) ? data : (data ? [data] : []);
-              result = { data: _single ? (arr[0] || null) : arr, error: null };
-            }
-            return resolve ? resolve(result) : result;
-          });
-        })
-        .catch(function(e) {
-          var result = { data: null, error: { message: e.message } };
-          return resolve ? resolve(result) : result;
+      var p = _call(table, _method, _query, _filters, _payload)
+        .then(function(res) {
+          // single: retornar primeiro item
+          if(_filters.find(function(f){return f.type==='single';})) {
+            res = {data: res.data && res.data[0] ? res.data[0] : res.data, error: res.error};
+          }
+          return res;
         });
+      if(resolve) return p.then(resolve, reject);
+      return p;
     }
   };
   return obj;
 }
 
-// Objeto db compatível com API Supabase
 var db = {
   from: function(table) {
+    var b = _builder(table);
     return {
-      select: function(cols) { return _builder(table, 'GET').select(cols); },
-      insert: function(data) { return _builder(table, 'POST', data); },
-      update: function(data) { return _builder(table, 'PATCH', data); },
-      delete: function() { return _builder(table, 'DELETE'); },
-      upsert: function(data, opts) { return _builder(table, 'POST', data).upsert(data, opts); }
+      select: function(q) { return b.select(q); },
+      insert: function(d) { return b.insert(d); },
+      update: function(d) { return b.update(d); },
+      delete: function() { return b.delete(); },
+      upsert: function(d, o) { return b.upsert(d, o); }
     };
   },
   channel: function() { return { on: function() { return this; }, subscribe: function() {} }; },
   removeChannel: function() {}
 };
-
-// Compatibilidade com supabase.createClient (não usado mais)
 var supabase = { createClient: function() { return db; } };
 </script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
