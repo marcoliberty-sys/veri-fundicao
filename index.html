@@ -150,7 +150,9 @@ tbody td{padding:8px 12px;font-size:13px;color:var(--c7);}
 .cfmbts{display:flex;gap:7px;justify-content:center;}
 .fin-tab{transition:opacity .15s;}
 @keyframes urgpulse{0%,100%{opacity:1;transform:scale(1);}50%{opacity:.75;transform:scale(1.03);}}
-@media print{.sidebar,.topbar,.fbar,.sh button,.ra,.aa,.card-f,.moverlay,.cfmoverlay,.toast{display:none!important;}.main{margin-left:0!important;}.page{display:block!important;padding:0!important;}}
+@media print{.sidebar,.topbar,.fbar,.sh button,.ra,.aa,.moverlay,.cfmoverlay{display:none;}
+.toast{display:none;}
+.card-f{padding:8px 13px;border-top:1px solid var(--c2);display:flex;gap:5px;}.main{margin-left:0!important;}.page{display:block!important;padding:0!important;}}
 </style>
 </head>
 <body>
