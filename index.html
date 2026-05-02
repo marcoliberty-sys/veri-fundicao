@@ -54,7 +54,7 @@ body{font-family:var(--fn);background:#F4F7F5;color:var(--c8);font-size:14px;}
 .kl{font-size:10px;color:var(--c5);font-weight:500;text-transform:uppercase;letter-spacing:.4px;margin-bottom:4px;}
 .kv{font-size:22px;font-weight:600;color:var(--c9);letter-spacing:-.5px;line-height:1;}
 .ks{font-size:11px;color:var(--c4);margin-top:2px;}
-.tc{background:#fff;border-radius:var(--rr);box-shadow:var(--sh);border:1px solid var(--c2);overflow:hidden;}
+.tc{background:#fff;border-radius:var(--rr);box-shadow:var(--sh);border:1px solid var(--c2);overflow-x:auto;}
 .tch{padding:10px 14px;border-bottom:1px solid var(--c2);display:flex;align-items:center;gap:8px;}
 .tct{font-size:13px;font-weight:600;color:var(--c8);flex:1;}
 .cb{background:var(--gl);color:var(--gd);font-size:11px;font-weight:600;padding:2px 7px;border-radius:20px;}
@@ -124,7 +124,7 @@ tbody td{padding:8px 12px;font-size:13px;color:var(--c7);}
 .card-h{padding:11px 13px;background:var(--gd);display:flex;align-items:center;gap:8px;}
 .card-av{width:29px;height:29px;border-radius:50%;background:rgba(255,255,255,.15);display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:#fff;flex-shrink:0;}
 .card-name{font-size:13px;font-weight:600;color:#fff;flex:1;}
-.card-b{padding:10px 13px;}.card-f{padding:8px 13px;border-top:1px solid var(--c2);display:flex;gap:5px;}
+.card-b{padding:10px 13px;}.sbdg{background:var(--gp);color:var(--g);border-radius:20px;padding:2px 8px;font-size:12px;font-weight:600;}.card-f{padding:8px 13px;border-top:1px solid var(--c2);display:flex;gap:5px;}
 .ir{display:flex;justify-content:space-between;align-items:center;padding:3px 0;border-bottom:1px solid var(--c1);font-size:12px;}
 .ir:last-child{border-bottom:none;}.il{color:var(--c5);}.iv{color:var(--c8);font-weight:500;}
 .sku-builder{border:1px solid var(--c3);border-radius:var(--rs);overflow:hidden;margin-top:4px;}
@@ -739,10 +739,10 @@ tbody td{padding:8px 12px;font-size:13px;color:var(--c7);}
 
   <!-- PÁGINA: CATÁLOGO SKUs (Fotos) -->
   <div id="pg-catalogo" class="page">
-    <div class="fbar" style="margin-bottom:14px">
-      <input class="si" id="catsrch" type="text" placeholder="🔍 Buscar SKU..." oninput="renderCatalogo()" style="width:200px">
-      <span class="sbdg" id="catcnt" style="margin-left:8px">0 modelos</span>
-      <button class="btn btnp bsm" onclick="openMModelo()">+ Modelo</button>
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px">
+      <input class="si" id="catsrch" type="text" placeholder="🔍 Buscar SKU..." oninput="renderCatalogo()" style="width:220px">
+      <span id="catcnt" style="font-size:12px;color:var(--c5)">0 modelos</span>
+      <button class="btn btnp bsm" style="margin-left:auto" onclick="openMModelo()">+ Modelo</button>
     </div>
     <div id="catgrid" class="cards">
       <div style="padding:20px;color:var(--c4)">Carregando...</div>
